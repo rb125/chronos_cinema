@@ -1291,6 +1291,9 @@ STYLE:
             },
             "output_audio_transcription": {},
             "tools": self.live_tools,
+            # Compress old context with a sliding window so long multi-beat
+            # sessions don't hit the context limit and drop the session.
+            "context_window_compression": {"sliding_window": {}},
         }
 
         try:

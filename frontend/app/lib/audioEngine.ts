@@ -19,6 +19,8 @@ export class AudioEngine {
   private nextNarrationTime = 0;
   private isNarrating = false;
   private bgmPlaying = false;
+  // Oscillator nodes used for the synthetic fallback ambient bed
+  private fallbackOscillators: OscillatorNode[] = [];
 
   /** Initialize the AudioContext. Must be called in response to a user gesture. */
   init(): void {
@@ -145,6 +147,9 @@ export class AudioEngine {
   private _startBgmLoop(): void {
     if (!this.ctx || !this.bgmGain || !this.bgmBuffer) return;
 
+    // Real BGM is taking over — stop synthetic fallback
+    this._stopFallbackOscillators();
+
     // Stop existing BGM gracefully
     if (this.bgmSource) {
       try {
@@ -164,6 +169,57 @@ export class AudioEngine {
     // Fade BGM in
     const targetVol = BGM_VOLUME_FULL;
     this.bgmGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.8);
+  }
+
+  /**
+   * Start a synthesised ambient bed immediately (no audio file required).
+   * Uses three detuned sine oscillators layered into the existing bgmGain
+   * node so ducking / restore work identically to the real BGM path.
+   * When the real Lyria score arrives, playBgm() stops the oscillators.
+   */
+  playFallbackBgm(): void {
+    if (!this.ctx || !this.bgmGain) return;
+    if (this.bgmPlaying) return; // real BGM already running
+
+    // Stop any previous fallback oscillators
+    this._stopFallbackOscillators();
+
+    // Three slightly-detuned sine waves → warm ambient pad
+    const freqs = [55, 82.5, 110]; // A1, E2, A2
+    for (const freq of freqs) {
+      const osc = this.ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      // Slight vibrato for warmth
+      const lfo = this.ctx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = 0.15 + Math.random() * 0.1;
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.value = 0.4;
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+
+      // Individual gain so layers blend softly
+      const oscGain = this.ctx.createGain();
+      oscGain.gain.value = 0.07;
+      osc.connect(oscGain);
+      oscGain.connect(this.bgmGain);
+
+      osc.start();
+      lfo.start();
+      this.fallbackOscillators.push(osc, lfo);
+    }
+
+    // Fade the bgmGain up to full volume
+    this.bgmGain.gain.setTargetAtTime(BGM_VOLUME_FULL, this.ctx.currentTime, 1.5);
+  }
+
+  private _stopFallbackOscillators(): void {
+    for (const osc of this.fallbackOscillators) {
+      try { osc.stop(); } catch {}
+    }
+    this.fallbackOscillators = [];
   }
 
   /** Duck BGM volume down (call when narration starts). */
@@ -198,6 +254,7 @@ export class AudioEngine {
 
   /** Stop all audio and release resources. */
   destroy(): void {
+    this._stopFallbackOscillators();
     if (this.bgmSource) {
       try {
         this.bgmSource.stop();
