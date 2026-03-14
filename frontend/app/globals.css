@@ -160,6 +160,49 @@ body {
   transition: opacity 0.6s ease-in-out;
 }
 
+/* Ken Burns cinematic pan-zoom animations for static images */
+@keyframes kenBurns0 {
+  0%   { transform: scale(1.00) translate(0%, 0%); }
+  100% { transform: scale(1.10) translate(-3%, -2%); }
+}
+@keyframes kenBurns1 {
+  0%   { transform: scale(1.05) translate(2%, 1%); }
+  100% { transform: scale(1.14) translate(-2%, -3%); }
+}
+@keyframes kenBurns2 {
+  0%   { transform: scale(1.10) translate(-3%, 2%); }
+  100% { transform: scale(1.00) translate(3%, -1%); }
+}
+@keyframes kenBurns3 {
+  0%   { transform: scale(1.00) translate(3%, -2%); }
+  100% { transform: scale(1.12) translate(-1%, 2%); }
+}
+@keyframes kenBurns4 {
+  0%   { transform: scale(1.08) translate(0%, 3%); }
+  100% { transform: scale(1.00) translate(2%, -3%); }
+}
+@keyframes kenBurns5 {
+  0%   { transform: scale(1.00) translate(-2%, -3%); }
+  100% { transform: scale(1.10) translate(3%, 2%); }
+}
+@keyframes kenBurns6 {
+  0%   { transform: scale(1.12) translate(2%, -1%); }
+  100% { transform: scale(1.02) translate(-3%, 3%); }
+}
+@keyframes kenBurns7 {
+  0%   { transform: scale(1.02) translate(-1%, 2%); }
+  100% { transform: scale(1.12) translate(2%, -2%); }
+}
+
+.ken-burns-0 { animation: kenBurns0 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-1 { animation: kenBurns1 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-2 { animation: kenBurns2 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-3 { animation: kenBurns3 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-4 { animation: kenBurns4 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-5 { animation: kenBurns5 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-6 { animation: kenBurns6 var(--kb-duration, 38s) ease-in-out forwards; }
+.ken-burns-7 { animation: kenBurns7 var(--kb-duration, 38s) ease-in-out forwards; }
+
 /* Pulsing recording indicator */
 @keyframes record-pulse {
   0%, 100% { opacity: 1; }

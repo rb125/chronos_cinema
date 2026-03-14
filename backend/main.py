@@ -1415,37 +1415,38 @@ STYLE:
                     current_topic = topic
                     current_user_name = user_name
 
-                    async def render_and_deliver_beat_visual(beat_idx: int, beat: Dict[str, Any]):
-                        """Render video (with image fallback) for a beat and self-deliver when ready."""
-                        video_prompt = beat.get("video_prompt") or f"Cinematic documentary shot for {topic}"
+                    # ── Visual generation helpers ────────────────────────────
+                    async def render_image_for_beat(beat_idx: int, beat: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                        """Generate a still image for a beat (fast path: ~10-15s).
+                        Returns the payload dict; also self-delivers via WebSocket when done."""
                         image_prompt = beat.get("image_prompt") or (
-                            "Photorealistic documentary still. " + video_prompt
+                            "Photorealistic documentary still. " + (beat.get("video_prompt") or "")
                         )
+                        payload = await self._render_image_payload(
+                            image_prompt,
+                            websocket=websocket,
+                            status_prefix=f"[Image][Beat {beat_idx + 1}]",
+                        )
+                        if payload:
+                            payload["beat_index"] = beat_idx
+                            await self._send(websocket, payload)
+                        return payload
+
+                    async def render_video_for_beat(beat_idx: int, beat: Dict[str, Any]):
+                        """Generate a Veo video for a beat (slow path: 60-180s).
+                        Self-delivers via WebSocket when done — upgrades the image for that beat."""
+                        video_prompt = beat.get("video_prompt") or f"Cinematic shot for {topic}"
                         payload = await self._render_video_payload(
                             video_prompt,
                             websocket=websocket,
-                            status_prefix=f"[Video Agent][Beat {beat_idx + 1}]",
+                            status_prefix=f"[Video][Beat {beat_idx + 1}]",
                         )
                         if payload:
                             payload["beat_index"] = beat_idx
                             await self._send(websocket, payload)
                             await self._send(
                                 websocket,
-                                {"type": "status", "content": f"[Video Agent] Beat {beat_idx + 1} visual delivered."},
-                            )
-                            return
-                        # Video failed — try image fallback
-                        img_payload = await self._render_image_payload(
-                            image_prompt,
-                            websocket=websocket,
-                            status_prefix=f"[Image Agent][Beat {beat_idx + 1}]",
-                        )
-                        if img_payload:
-                            img_payload["beat_index"] = beat_idx
-                            await self._send(websocket, img_payload)
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": f"[Image Agent] Beat {beat_idx + 1} storyboard delivered."},
+                                {"type": "status", "content": f"[Video] Beat {beat_idx + 1} cinematic clip delivered — upgrading scene."},
                             )
 
                     try:
@@ -1473,14 +1474,8 @@ STYLE:
                                 beats.append(
                                     {
                                         "narration": template.get("narration", f"Explore {topic} further."),
-                                        "video_prompt": template.get(
-                                            "video_prompt",
-                                            f"Cinematic documentary shot about {topic}",
-                                        ),
-                                        "image_prompt": template.get(
-                                            "image_prompt",
-                                            f"Photorealistic documentary still about {topic}",
-                                        ),
+                                        "video_prompt": template.get("video_prompt", f"Cinematic shot about {topic}"),
+                                        "image_prompt": template.get("image_prompt", f"Photorealistic still of {topic}"),
                                         "target_duration_seconds": template.get("target_duration_seconds", 35),
                                     }
                                 )
@@ -1491,50 +1486,80 @@ STYLE:
                         await self._send(websocket, {"type": "topic_received", "content": topic, "title": title})
                         await self._send(
                             websocket,
-                            {
-                                "type": "status",
-                                "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready.",
-                            },
+                            {"type": "status", "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready."},
                         )
 
-                        # Fire BGM generation — runs in background, delivers when ready
-                        self._spawn_task(
-                            active_tasks,
-                            self.generate_background_score_audio(
-                                blueprint.get("music_prompt", ""),
-                                websocket,
-                            ),
-                            "music",
-                        )
+                        # ── Phase 1: Fire all image renders immediately (fast, ~10-15s each) ──
+                        # Images are the primary sync element. They arrive before narration starts.
+                        # Veo videos fire in background and silently upgrade each beat's image when ready.
+                        await self._send(websocket, {"type": "status", "content": "[Studio] Pre-rendering all scenes before narration begins..."})
 
-                        # Fire ALL beat visual renders in parallel — each self-delivers when done.
-                        # Narration NEVER waits for visuals; visuals arrive and display independently.
+                        image_tasks: Dict[int, asyncio.Task] = {}
+                        for beat_idx, beat in enumerate(beats):
+                            image_tasks[beat_idx] = self._spawn_task(
+                                active_tasks,
+                                render_image_for_beat(beat_idx, beat),
+                                f"image-beat-{beat_idx + 1}",
+                            )
+
+                        # Veo videos run in background — each self-delivers and upgrades the image
                         for beat_idx, beat in enumerate(beats):
                             self._spawn_task(
                                 active_tasks,
-                                render_and_deliver_beat_visual(beat_idx, beat),
-                                f"visual-beat-{beat_idx + 1}",
+                                render_video_for_beat(beat_idx, beat),
+                                f"video-beat-{beat_idx + 1}",
                             )
 
-                        await self._send(
-                            websocket,
-                            {
-                                "type": "status",
-                                "content": (
-                                    f"[Studio] {len(beats)} visual renders started in parallel. "
-                                    "Narration begins now — visuals arrive as they render."
-                                ),
-                            },
+                        # BGM fires in background, fallback plays immediately
+                        self._spawn_task(
+                            active_tasks,
+                            self.generate_background_score_audio(blueprint.get("music_prompt", ""), websocket),
+                            "music",
                         )
 
-                        # Sequential narration — each beat sends audio immediately with no visual gating
+                        # ── Phase 2: Hold narration until beat 0's image is ready ──
+                        # This is the "cinematic curtain rise" — we wait for the first frame
+                        # before the narrator speaks. Max wait: 28s.
+                        # Subsequent beats: images pre-generate while the previous beat narrates,
+                        # so we only need a short (≤6s) catch-up wait before each beat.
+                        beat0_task = image_tasks.get(0)
+                        if beat0_task and not beat0_task.done():
+                            await self._send(
+                                websocket,
+                                {"type": "status", "content": "[Studio] Composing opening scene... narration starts when first frame is ready."},
+                            )
+                            try:
+                                async with asyncio.timeout(28):
+                                    await asyncio.shield(beat0_task)
+                            except (asyncio.TimeoutError, asyncio.CancelledError):
+                                await self._send(
+                                    websocket,
+                                    {"type": "status", "content": "[Studio] Opening scene delayed — starting narration with placeholder visual."},
+                                )
+
+                        await self._send(websocket, {"type": "status", "content": "[Studio] Scene locked. Rolling documentary."})
+
+                        # ── Phase 3: Sequential narration — each beat waits briefly for its image ──
                         for beat_index, beat in enumerate(beats):
                             if interrupt_event.is_set():
                                 interrupt_event.clear()
-                                await self._send(
-                                    websocket,
-                                    {"type": "status", "content": "[Delegator] Processing interruption before next beat."},
-                                )
+
+                            # Ensure this beat's image is ready before the narrator speaks.
+                            # For beat 0: already handled above.
+                            # For beats 1+: image was generating during previous beat's narration (~35s),
+                            # so it should already be done. Short catch-up wait as safety net.
+                            if beat_index > 0:
+                                img_task = image_tasks.get(beat_index)
+                                if img_task and not img_task.done():
+                                    await self._send(
+                                        websocket,
+                                        {"type": "status", "content": f"[Studio] Loading scene {beat_index + 1}..."},
+                                    )
+                                    try:
+                                        async with asyncio.timeout(6):
+                                            await asyncio.shield(img_task)
+                                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                                        pass
 
                             await self._send(
                                 websocket,
@@ -1543,6 +1568,7 @@ STYLE:
                                     "beat_index": beat_index,
                                     "total_beats": len(beats),
                                     "title": title,
+                                    "target_duration_seconds": beat.get("target_duration_seconds", 35),
                                 },
                             )
 
@@ -1563,35 +1589,19 @@ STYLE:
                                     {"type": "status", "content": f"[Delegator] Beat {beat_index + 1} timed out. Advancing."},
                                 )
 
-                            await self._send(
-                                websocket,
-                                {"type": "beat_end", "beat_index": beat_index},
-                            )
+                            await self._send(websocket, {"type": "beat_end", "beat_index": beat_index})
 
-                        # Generate quiz from script content
+                        # ── Phase 4: Quiz generation ──
                         script_content = "\n\n".join(
                             f"Beat {i + 1}: {b.get('narration', '')}" for i, b in enumerate(beats)
                         )
                         await self._send(
                             websocket,
-                            {"type": "status", "content": "[Quiz Agent] Generating quiz questions from documentary content..."},
+                            {"type": "status", "content": "[Quiz Agent] Generating quiz questions..."},
                         )
                         quiz_questions = await self.build_quiz(topic, script_content)
                         if quiz_questions:
-                            await self._send(
-                                websocket,
-                                {"type": "quiz_data", "questions": quiz_questions, "topic": topic},
-                            )
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": f"[Quiz Agent] {len(quiz_questions)}-question quiz ready."},
-                            )
-                        else:
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": "[Quiz Agent] Quiz generation skipped."},
-                            )
-
+                            await self._send(websocket, {"type": "quiz_data", "questions": quiz_questions, "topic": topic})
                         await self._send(websocket, {"type": "story_complete"})
                         await self._send(
                             websocket,
@@ -1604,7 +1614,7 @@ STYLE:
                     except asyncio.CancelledError:
                         await self._send(
                             websocket,
-                            {"type": "status", "content": "[Studio] Previous story pipeline cancelled."},
+                            {"type": "status", "content": "[Studio] Story pipeline cancelled."},
                         )
                         raise
                     except Exception as story_error:

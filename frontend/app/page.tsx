@@ -60,6 +60,7 @@ export default function ChronosCinema() {
   const [topic, setTopic] = useState("");
   const [userName, setUserName] = useState("");
   const [docTitle, setDocTitle] = useState("");
+  const [beatDuration, setBeatDuration] = useState(35); // seconds, for Ken Burns timing
 
   // Cinema state
   const [currentBeat, setCurrentBeat] = useState(-1);
@@ -142,13 +143,16 @@ export default function ChronosCinema() {
 
   // ── Apply a received visual ──
   const applyVisual = useCallback((visual: Visual) => {
-    // Store visual by beat index
+    // Always store by beat index
     setVisualByBeat((prev) => ({ ...prev, [visual.beatIndex]: visual }));
-    // Show immediately if it's for the current beat or we have no visual yet
+
     setCurrentVisual((prev) => {
-      if (!prev || visual.beatIndex >= currentBeatRef.current) {
-        return visual;
-      }
+      // No visual yet → show whatever arrives first
+      if (!prev) return visual;
+      // Video always upgrades an image for the same beat (silent upgrade)
+      if (visual.type === "video" && visual.beatIndex === prev.beatIndex) return visual;
+      // Show if it's for the current or a future beat
+      if (visual.beatIndex >= currentBeatRef.current) return visual;
       return prev;
     });
   }, []);
@@ -185,10 +189,12 @@ export default function ChronosCinema() {
         case "beat_start": {
           const beatIdx = msg.beat_index as number;
           const total = msg.total_beats as number;
+          const dur = (msg.target_duration_seconds as number) || 35;
           setCurrentBeat(beatIdx);
           setTotalBeats(total);
+          setBeatDuration(dur);
           setSubtitles([]);
-          // Show cached visual for this beat if available
+          // Image for this beat should already be cached (backend waited for it)
           const cached = visualByBeatRef.current[beatIdx];
           if (cached) setCurrentVisual(cached);
           audioEngineRef.current?.duckBgm();
@@ -637,13 +643,16 @@ export default function ChronosCinema() {
             {/* Vignette */}
             <div className="absolute inset-0 vignette z-10" />
 
-            {/* Loading skeleton */}
+            {/* Loading skeleton — shown while waiting for first scene image */}
             {!currentVisual && (
-              <div className="absolute inset-0 flex items-center justify-center z-5">
-                <div className="text-center space-y-3">
+              <div className="absolute inset-0 flex items-center justify-center z-5 bg-cinema-black">
+                <div className="text-center space-y-4">
                   <div className="w-12 h-12 border-2 border-cinema-gold/40 border-t-cinema-gold rounded-full animate-spin mx-auto" />
-                  <p className="text-cinema-muted text-xs">
-                    Rendering visuals...
+                  <p className="text-cinema-gold text-sm font-medium">
+                    Composing opening scene...
+                  </p>
+                  <p className="text-cinema-muted text-xs max-w-xs">
+                    The narrator waits for the first frame before speaking
                   </p>
                 </div>
               </div>
@@ -652,8 +661,9 @@ export default function ChronosCinema() {
             {/* Video display */}
             {currentVisual?.type === "video" && (
               <video
+                key={`video-${currentVisual.beatIndex}`}
                 ref={videoRef}
-                className="w-full h-full object-cover visual-transition"
+                className="w-full h-full object-cover animate-fade-in"
                 muted
                 loop
                 playsInline
@@ -661,14 +671,20 @@ export default function ChronosCinema() {
               />
             )}
 
-            {/* Image display */}
+            {/* Image display — with Ken Burns pan-zoom */}
             {currentVisual?.type === "image" && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`data:${currentVisual.mimeType};base64,${currentVisual.data}`}
-                alt="Documentary visual"
-                className="w-full h-full object-cover visual-transition"
-              />
+              <div
+                key={`${currentVisual.beatIndex}-${currentVisual.data.slice(0, 8)}`}
+                className="absolute inset-0 overflow-hidden"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:${currentVisual.mimeType};base64,${currentVisual.data}`}
+                  alt="Documentary visual"
+                  className={`w-full h-full object-cover ken-burns-${currentBeat % 8}`}
+                  style={{ "--kb-duration": `${beatDuration + 4}s` } as React.CSSProperties}
+                />
+              </div>
             )}
 
             {/* Beat label overlay (top-left) */}
