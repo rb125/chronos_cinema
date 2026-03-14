@@ -1789,6 +1789,8 @@ STYLE:
                                         )
                                 else:
                                     await self._send_error(websocket, f"Audio send error: {e}")
+                        elif msg_type == "ping":
+                            await self._send(websocket, {"type": "pong"})
                         elif msg_type == "user_audio_end":
                             try:
                                 await end_realtime_audio()
@@ -1852,6 +1854,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         ws="websockets-sansio",
-        ws_ping_interval=60.0,
-        ws_ping_timeout=60.0,
+        ws_ping_interval=None,
+        ws_ping_timeout=None,
     )
