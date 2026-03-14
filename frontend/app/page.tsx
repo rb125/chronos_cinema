@@ -71,6 +71,9 @@ export default function ChronosCinema() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [topic, setTopic] = useState("");
   const [userName, setUserName] = useState("");
+  const [apiKey, setApiKey] = useState<string>(() => {
+    try { return sessionStorage.getItem("chronos_api_key") || ""; } catch { return ""; }
+  });
   const [docTitle, setDocTitle] = useState("");
   const [beatDuration, setBeatDuration] = useState(35);
 
@@ -507,9 +510,9 @@ export default function ChronosCinema() {
 
     await new Promise((resolve) => setTimeout(resolve, 400));
     wsRef.current?.send(
-      JSON.stringify({ type: "start", topic: topic.trim(), name: userName.trim() })
+      JSON.stringify({ type: "start", topic: topic.trim(), name: userName.trim(), apiKey: apiKey.trim() })
     );
-  }, [topic, userName, connect]);
+  }, [topic, userName, apiKey, connect]);
 
   // ── Replay a saved session ──
   const replayDocumentary = useCallback(
@@ -865,6 +868,11 @@ export default function ChronosCinema() {
           setTopic={setTopic}
           userName={userName}
           setUserName={setUserName}
+          apiKey={apiKey}
+          setApiKey={(k) => {
+            setApiKey(k);
+            try { sessionStorage.setItem("chronos_api_key", k); } catch {}
+          }}
           inputRef={inputRef}
           onStart={startDocumentary}
           history={history}
@@ -1190,13 +1198,15 @@ export default function ChronosCinema() {
 // ─── Idle View ────────────────────────────────────────────────────────────────
 
 function IdleView({
-  topic, setTopic, userName, setUserName, inputRef, onStart,
+  topic, setTopic, userName, setUserName, apiKey, setApiKey, inputRef, onStart,
   history, onClearHistory, onPickTopic, onReplay,
 }: {
   topic: string;
   setTopic: (t: string) => void;
   userName: string;
   setUserName: (n: string) => void;
+  apiKey: string;
+  setApiKey: (k: string) => void;
   inputRef: React.RefObject<HTMLInputElement>;
   onStart: () => void;
   history: HistoryEntry[];
@@ -1222,6 +1232,31 @@ function IdleView({
         {/* Input card */}
         <div className="bg-cinema-card border border-cinema-border rounded-2xl p-6 space-y-4 shadow-2xl">
           <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest flex items-center gap-2">
+              Gemini API Key
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-cinema-muted font-normal normal-case tracking-normal hover:text-cinema-gold transition-colors"
+              >
+                ↗ Get one free
+              </a>
+            </label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="AIza…"
+              className="w-full bg-cinema-black border border-cinema-border rounded-xl px-4 py-2.5 text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/50 transition-colors text-[0.9375rem] font-mono"
+              autoFocus
+            />
+            <p className="text-[10px] text-cinema-muted leading-relaxed">
+              Stored in browser session only — never sent to any server other than your own backend.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
             <label className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest">
               Documentary Topic
             </label>
@@ -1230,10 +1265,9 @@ function IdleView({
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onStart()}
+              onKeyDown={(e) => e.key === "Enter" && apiKey.trim() && onStart()}
               placeholder="Black holes, DNA replication, the Roman Empire…"
               className="w-full bg-cinema-black border border-cinema-border rounded-xl px-4 py-2.5 text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/50 transition-colors text-[0.9375rem]"
-              autoFocus
             />
           </div>
 
@@ -1256,7 +1290,7 @@ function IdleView({
 
           <button
             onClick={onStart}
-            disabled={!topic.trim()}
+            disabled={!topic.trim() || !apiKey.trim()}
             className="w-full py-3 rounded-xl font-semibold text-[0.9375rem] tracking-wide btn-produce"
           >
             ▶ Produce My Documentary

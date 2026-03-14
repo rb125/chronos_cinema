@@ -6,6 +6,114 @@ An AI agent that produces cinematic, multimodal educational documentaries on any
 
 ---
 
+## Architecture
+
+![Chronos Cinema System Architecture](docs/architecture.svg)
+
+*Full diagram: [`docs/architecture.svg`](docs/architecture.svg)*
+
+The browser opens a WebSocket to the FastAPI backend. The backend creates a per-connection `ChronosAgent` using the user-supplied API key, opens a Gemini Live session on Vertex AI, and runs parallel workers for script, images (Imagen), video (Veo), and music (Lyria). All media streams back to the frontend in real time over the same WebSocket.
+
+---
+
+## For Judges: How to Test
+
+> **Quickest path:** API-key mode — no GCP account needed, just a Gemini API key.
+
+### Option A — API-Key Mode (fastest, ~2 min setup)
+
+> Lyria music and Veo video require a GCP project (Option B). In API-key mode the app falls back to ambient BGM and Imagen stills only — narration, images, and quiz still work fully.
+
+**1. Start the backend**
+
+```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+# No .env required — API key is entered in the browser UI
+uvicorn main:app --host 0.0.0.0 --port 8000 \
+  --ws websockets-sansio --ws-ping-interval 60 --ws-ping-timeout 60
+```
+
+**2. Start the frontend**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**3. Open the app**
+
+Open **http://localhost:3000**, enter your **Gemini API key** in the key field (it stays in your browser session only), type a topic, and click **▶ Produce My Documentary**.
+
+> Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — the free tier works.
+
+---
+
+### Option B — Full GCP Project Mode (all features: Veo + Lyria + GCS)
+
+**Prerequisites:** GCP project with billing enabled, `gcloud` CLI installed.
+
+**1. Enable APIs and authenticate**
+
+```bash
+gcloud services enable aiplatform.googleapis.com \
+  run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com storage.googleapis.com
+
+gcloud auth application-default login
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+```
+
+**2. Configure `backend/.env`**
+
+```bash
+VERTEX_AUTH_MODE=project
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+
+# Required for Veo to write output artifacts:
+VEO_OUTPUT_GCS_URI=gs://your-bucket/chronos-veo-output
+```
+
+**3. Run both services**
+
+```bash
+chmod +x start.sh && ./start.sh
+```
+
+Open **http://localhost:3000** — no API key field appears when the backend is already configured via env.
+
+---
+
+### What to Expect During a Run
+
+| Time | What happens |
+|------|-------------|
+| 0 s | Enter topic → click Produce |
+| ~5–10 s | Script generated, all renders fire simultaneously |
+| ~15–25 s | First scene image ready → narrator begins |
+| ~30–60 s | Subsequent images arrive (pre-rendered during previous beat) |
+| ~60–180 s | Veo cinematic clips arrive and silently upgrade each scene |
+| Ongoing | BGM under narration; auto-ducks when narrator speaks |
+| After narration | 5-question quiz generated from the documentary content |
+
+---
+
+### Feature Checklist for Judges
+
+- [ ] **Live narration** — Gemini Live audio plays beat-by-beat with closed captions (CC toggle top-right)
+- [ ] **Interleaved visuals** — Imagen stills appear before each beat; Veo clips silently upgrade them
+- [ ] **Background score** — Music plays and ducks under narration (Lyria in project mode, ambient fallback otherwise)
+- [ ] **Voice interruption** — Click the mic icon during narration and speak to redirect the story
+- [ ] **Chat interruption** — Type in the chat bar at the bottom during narration
+- [ ] **Quiz** — Answer 5 multiple-choice questions after the documentary; see explanations and score
+- [ ] **Replay** — Click any entry in the history sidebar to replay the full session without re-calling any API
+- [ ] **Theater mode** — Click the resize icon on the cinema frame for fullscreen theatre view
+
+---
+
 ## How It Works
 
 1. **Script** — Gemini 2.5 Flash writes an 8-beat documentary arc (Hook → Foundation → Mechanism → Scale → Counterintuitive → Human Connection → Frontier → Reflection), ~200 words per beat.
@@ -38,55 +146,13 @@ An AI agent that produces cinematic, multimodal educational documentaries on any
 
 - Python 3.10+
 - Node.js 18+
-- A Google Cloud project with Vertex AI enabled and billing active
-- `gcloud` CLI (for ADC auth and deployment)
+- A Gemini API key **or** a Google Cloud project with Vertex AI enabled
 
 ---
 
 ## Quick Start (Local)
 
-### 1. Enable Cloud APIs
-
-```bash
-gcloud services enable aiplatform.googleapis.com \
-  run.googleapis.com cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com storage.googleapis.com
-```
-
-### 2. Authenticate
-
-```bash
-gcloud auth application-default login
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
-```
-
-### 3. Configure environment
-
-Edit `backend/.env` (already present in repo, update with your values):
-
-```bash
-VERTEX_AUTH_MODE=project
-GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-
-# Required for Veo to write output artifacts:
-VEO_OUTPUT_GCS_URI=gs://your-bucket/chronos-veo-output
-
-# Optional — override default models:
-# GEMINI_LIVE_MODEL=gemini-live-2.5-flash-native-audio
-# GEMINI_SCRIPT_MODEL=gemini-2.5-flash
-# GEMINI_VIDEO_MODEL=veo-3.1-generate-001
-# GEMINI_IMAGE_MODEL=imagen-4.0-fast-generate-001
-# GEMINI_MUSIC_MODEL=lyria-002
-```
-
-**API-key mode** (no ADC, limited features — no Lyria, no GCS):
-```bash
-VERTEX_AUTH_MODE=api_key
-GOOGLE_API_KEY=your-api-key
-```
-
-### 4. Backend setup
+### 1. Backend setup
 
 ```bash
 cd backend
@@ -95,7 +161,7 @@ source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 5. Frontend setup
+### 2. Frontend setup
 
 ```bash
 cd frontend
@@ -109,7 +175,7 @@ The frontend connects to `ws://localhost:8000/ws` by default. To use a different
 NEXT_PUBLIC_WS_URL=ws://your-backend-host/ws
 ```
 
-### 6. Run both services
+### 3. Run both services
 
 **Option A — single command:**
 ```bash
@@ -133,39 +199,35 @@ cd frontend
 npm run dev
 ```
 
-Open **http://localhost:3000**.
+Open **http://localhost:3000** and enter your API key in the UI.
 
 ---
 
-## What to Expect
+## Automated Cloud Deployment
 
-| Time | What happens |
-|------|-------------|
-| 0s | You enter a topic and click "Produce My Documentary" |
-| ~5-10s | Script generated, all image and video renders start simultaneously |
-| ~15-25s | First scene image ready → narrator begins (you see the scene, then hear the voice) |
-| ~30-60s | Subsequent scene images arrive (pre-rendered while previous beat plays) |
-| ~60-180s | Veo cinematic clips start arriving and silently upgrade each scene |
-| Ongoing | BGM plays under narration; auto-ducks when narrator speaks |
-| After narration | 5-question quiz generated from the documentary content |
+The deployment is fully automated via [`deploy_cloud_run.sh`](deploy_cloud_run.sh).
 
----
-
-## Cloud Run Deployment
+The script ([`deploy_cloud_run.sh`, line 16](deploy_cloud_run.sh#L16)):
+- Enables all required GCP APIs (`aiplatform`, `run`, `cloudbuild`, `artifactregistry`, `storage`)
+- Builds and deploys the backend from source using `gcloud run deploy --source`
+- Passes all environment variables as Cloud Run env vars
+- Outputs the deployed service URL
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=us-central1
 export VEO_OUTPUT_GCS_URI=gs://your-bucket/chronos-veo-output
+chmod +x deploy_cloud_run.sh
 ./deploy_cloud_run.sh
 ```
 
-Then set `NEXT_PUBLIC_WS_URL=wss://your-cloud-run-url/ws` in your frontend environment.
+Then set `NEXT_PUBLIC_WS_URL=wss://your-cloud-run-url/ws` in your frontend environment and deploy the frontend to Vercel or any static host.
 
 ---
 
 ## Notes
 
+- **API key in UI** — The Gemini API key is entered in the browser and transmitted only to your own backend over the WebSocket. It is stored in `sessionStorage` (clears on tab close) and never persisted to a server.
 - **Veo quota** — Veo generation is quota-sensitive. The app always shows an Imagen still first; Veo is a bonus upgrade. If Veo fails or times out, the still stays.
 - **Lyria quota** — Requires `VERTEX_AUTH_MODE=project`. In `api_key` mode the BGM fallback (ambient track) plays instead.
 - **Browser autoplay** — Web Audio requires a user gesture before audio starts. Clicking "Produce My Documentary" satisfies this.

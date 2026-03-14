@@ -1283,7 +1283,7 @@ class ChronosAgent:
             "Keep it brief — no more than 30 seconds of speaking."
         )
 
-    async def start_session(self, websocket: WebSocket):
+    async def start_session(self, websocket: WebSocket, initial_message: Optional[dict] = None):
         config = {
             "system_instruction": {
                 "parts": [{
@@ -1714,14 +1714,22 @@ STYLE:
 
                 receive_task = asyncio.create_task(receive_from_gemini())
 
+                # If websocket_endpoint peeked at the first message to extract
+                # the API key, replay it here so it is processed normally.
+                _pending_msg: Optional[dict] = initial_message
+
                 try:
                     while True:
-                        data = await websocket.receive_text()
-                        try:
-                            msg = json.loads(data)
-                        except json.JSONDecodeError:
-                            await self._send_error(websocket, "Invalid JSON message from client.")
-                            continue
+                        if _pending_msg is not None:
+                            msg = _pending_msg
+                            _pending_msg = None
+                        else:
+                            data = await websocket.receive_text()
+                            try:
+                                msg = json.loads(data)
+                            except json.JSONDecodeError:
+                                await self._send_error(websocket, "Invalid JSON message from client.")
+                                continue
 
                         msg_type = msg.get("type")
                         if msg_type == "start":
@@ -1833,19 +1841,49 @@ STYLE:
             await self._send_error(websocket, f"Session error: {str(e)}")
 
 
-PROJECT_ID, LOCATION, VERTEX_API_KEY = _resolve_vertex_runtime()
-agent = ChronosAgent(
-    project_id=PROJECT_ID,
-    location=LOCATION,
-    video_output_gcs_uri=os.getenv("VEO_OUTPUT_GCS_URI"),
-    api_key=VERTEX_API_KEY,
-)
+# Resolve server-side credentials from env (may all be None if not configured).
+# When a client supplies apiKey in the start message, it takes precedence.
+try:
+    PROJECT_ID, LOCATION, VERTEX_API_KEY = _resolve_vertex_runtime()
+except RuntimeError:
+    PROJECT_ID, LOCATION, VERTEX_API_KEY = None, os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1", None
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    await agent.start_session(websocket)
+
+    # Read the first message from the client so we can extract the user-supplied
+    # API key before constructing the per-connection ChronosAgent.
+    try:
+        first_data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        return
+
+    try:
+        first_msg = json.loads(first_data)
+    except json.JSONDecodeError:
+        await websocket.send_text(json.dumps({"type": "error", "content": "Invalid JSON in first message."}))
+        return
+
+    # User-supplied key takes precedence over server env key.
+    client_api_key = str(first_msg.get("apiKey", "")).strip() or None
+    effective_api_key = client_api_key or VERTEX_API_KEY
+
+    if not effective_api_key and not PROJECT_ID:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "content": "No API key provided. Enter your Gemini API key in the UI.",
+        }))
+        return
+
+    conn_agent = ChronosAgent(
+        project_id=None if (effective_api_key and not PROJECT_ID) else PROJECT_ID,
+        location=LOCATION or "us-central1",
+        video_output_gcs_uri=os.getenv("VEO_OUTPUT_GCS_URI"),
+        api_key=effective_api_key,
+    )
+    await conn_agent.start_session(websocket, initial_message=first_msg)
 
 
 if __name__ == "__main__":
