@@ -1,19 +1,16 @@
-import os
 import asyncio
-from google import genai
 from dotenv import load_dotenv
+from vertex_config import create_vertex_client
 
 load_dotenv()
 
 async def test_capabilities():
-    api_key = os.getenv("GOOGLE_API_KEY")
-    client = genai.Client(api_key=api_key)
+    client = create_vertex_client(api_version="v1")
 
     print("--- Testing Audio Generation (Attenborough Style) ---")
     try:
-        # Requesting audio output from Gemini 2.0 Flash
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model='gemini-2.5-flash',
             contents='Describe a black hole in one sentence, like a dramatic documentary narrator.',
             config={
                 'response_mime_type': 'audio/mp3'
@@ -25,10 +22,8 @@ async def test_capabilities():
 
     print("\n--- Testing Video Generation ---")
     try:
-        # Trying Veo / Imagen Video
-        # Note: 'imagen-3.0-generate-001' is a common internal ID, let's try a public alias first
-        video_response = client.models.generate_videos(
-            model='imagen-3.0-generate-001', 
+        client.models.generate_videos(
+            model='veo-3.1-generate-001',
             prompt='A cinematic timelapse of a flower blooming, 4k, documentary style',
             config={'aspect_ratio': '16:9'}
         )

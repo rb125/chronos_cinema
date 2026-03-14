@@ -3,3 +3,5 @@ uvicorn
 python-dotenv
 websockets
 google-genai
+google-cloud-storage
+aiofiles

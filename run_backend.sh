@@ -1,5 +1,7 @@
 #!/bin/bash
 # run_backend.sh
-export PYTHONPATH=$PYTHONPATH:.
-source backend/venv/bin/activate
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+set -euo pipefail
+
+cd backend
+source .venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload --ws websockets-sansio --ws-ping-interval 60 --ws-ping-timeout 60
