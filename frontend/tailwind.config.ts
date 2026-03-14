@@ -10,33 +10,46 @@ const config: Config = {
     extend: {
       colors: {
         cinema: {
-          black: "#0a0a0a",
-          dark: "#111111",
-          card: "#1a1a1a",
-          border: "#2a2a2a",
-          gold: "#c9a84c",
-          "gold-light": "#e8c96a",
-          text: "#e8e8e8",
-          muted: "#888888",
-          accent: "#3b82f6",
+          black:        "#06060F",   // deep space background
+          dark:         "#0C0C1A",   // slightly raised surface
+          card:         "#0F0F1E",   // card background
+          border:       "#1C1C32",   // default border
+          // primary accent — electric violet (replaces gold)
+          gold:         "#9333EA",
+          "gold-light": "#C084FC",
+          // text
+          text:         "#F0EEFF",   // near-white with slight violet tint
+          muted:        "#7070A0",   // muted — violet-tinted grey
+          // secondary accent — cyan
+          accent:       "#22D3EE",
+          // tertiary accent — hot pink (for gradients)
+          pink:         "#EC4899",
         },
       },
       fontFamily: {
-        cinematic: ["Georgia", "serif"],
+        // Modern system-font stack — SF Pro on macOS, Segoe UI on Windows, etc.
+        sans:    ["-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "system-ui", "sans-serif"],
+        // Display stack uses tighter tracking + heavier weight defined in CSS
+        display: ['"Segoe UI"', "-apple-system", "BlinkMacSystemFont", "system-ui", "sans-serif"],
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "fade-in": "fadeIn 0.5s ease-in",
-        "slide-up": "slideUp 0.4s ease-out",
+        "fade-in":    "fadeIn 0.5s ease-in",
+        "slide-up":   "slideUp 0.4s ease-out",
+        "gradient-x": "gradientX 4s ease infinite",
       },
       keyframes: {
         fadeIn: {
-          "0%": { opacity: "0" },
+          "0%":   { opacity: "0" },
           "100%": { opacity: "1" },
         },
         slideUp: {
-          "0%": { transform: "translateY(20px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
+          "0%":   { transform: "translateY(20px)", opacity: "0" },
+          "100%": { transform: "translateY(0)",    opacity: "1" },
+        },
+        gradientX: {
+          "0%, 100%": { backgroundPosition: "0% 50%"   },
+          "50%":       { backgroundPosition: "100% 50%" },
         },
       },
     },

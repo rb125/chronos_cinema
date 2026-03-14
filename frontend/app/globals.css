@@ -2,14 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS custom properties ────────────────────────────────────────────────── */
 :root {
-  --bg: #0a0a0a;
-  --text: #e8e8e8;
-  --gold: #c9a84c;
-  --gold-light: #e8c96a;
-  --card: #1a1a1a;
-  --border: #2a2a2a;
-  --muted: #888888;
+  --bg:           #06060F;
+  --surface:      #0F0F1E;
+  --border:       #1C1C32;
+  --violet:       #9333EA;
+  --violet-light: #C084FC;
+  --cyan:         #22D3EE;
+  --pink:         #EC4899;
+  --text:         #F0EEFF;
+  --muted:        #7070A0;
 }
 
 * {
@@ -22,8 +25,16 @@ html,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow-x: hidden;
+}
+
+/* Display font: tighten tracking + boost weight for hero headings */
+.font-display {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
+    "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variation-settings: "wght" 700;
 }
 
 /* ── Cinema frame ─────────────────────────────────────────────────────────── */
@@ -35,6 +46,7 @@ body {
   overflow: hidden;
 }
 
+/* Letterbox bars */
 .cinema-frame::before,
 .cinema-frame::after {
   content: "";
@@ -46,11 +58,10 @@ body {
   z-index: 10;
   pointer-events: none;
 }
-
 .cinema-frame::before { top: 0; }
 .cinema-frame::after  { bottom: 0; }
 
-/* Theater mode: no rounded corners, no letterbox bars */
+/* Theater mode — no bars, no radius */
 .cinema-frame.theater {
   border-radius: 0 !important;
 }
@@ -61,40 +72,39 @@ body {
 
 /* ── Subtitle ─────────────────────────────────────────────────────────────── */
 .subtitle-text {
-  text-shadow: 0 1px 4px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,0.8);
-  font-size: clamp(0.85rem, 2vw, 1.1rem);
-  line-height: 1.6;
+  font-size: clamp(0.875rem, 2vw, 1.1rem);
+  line-height: 1.65;
   letter-spacing: 0.01em;
+  text-shadow:
+    0 1px 4px rgba(0,0,0,0.98),
+    0 0 20px rgba(0,0,0,0.9);
 }
 
-/* ── Beat progress segment ────────────────────────────────────────────────── */
+/* ── Beat progress ────────────────────────────────────────────────────────── */
 .beat-segment {
   transition: all 0.4s ease;
 }
 
 /* ── Quiz options ─────────────────────────────────────────────────────────── */
 .quiz-option {
-  transition: all 0.18s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
 }
-
 .quiz-option:hover:not(.answered) {
-  border-color: var(--gold);
-  background: rgba(201, 168, 76, 0.07);
+  border-color: var(--violet);
+  background: rgba(147, 51, 234, 0.08);
   transform: translateX(3px);
 }
-
 .quiz-option.correct {
   border-color: #22c55e;
   background: rgba(34, 197, 94, 0.10);
 }
-
 .quiz-option.wrong {
   border-color: #ef4444;
   background: rgba(239, 68, 68, 0.08);
 }
 
-/* ── Scanlines (cinematic grain) ─────────────────────────────────────────── */
+/* ── Scanlines ────────────────────────────────────────────────────────────── */
 .scanlines::after {
   content: "";
   position: absolute;
@@ -103,8 +113,8 @@ body {
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.025) 2px,
-    rgba(0, 0, 0, 0.025) 4px
+    rgba(0, 0, 0, 0.02) 2px,
+    rgba(0, 0, 0, 0.02) 4px
   );
   pointer-events: none;
   z-index: 5;
@@ -114,13 +124,13 @@ body {
 .vignette {
   background: radial-gradient(
     ellipse at center,
-    transparent 55%,
-    rgba(0, 0, 0, 0.65) 100%
+    transparent 52%,
+    rgba(0, 0, 0, 0.72) 100%
   );
   pointer-events: none;
 }
 
-/* ── Audio waveform bars ─────────────────────────────────────────────────── */
+/* ── Wave bars (BGM indicator) ────────────────────────────────────────────── */
 @keyframes wave1 { 0%, 100% { height: 3px; } 50% { height: 14px; } }
 @keyframes wave2 { 0%, 100% { height: 7px; } 50% { height: 18px; } }
 @keyframes wave3 { 0%, 100% { height: 5px; } 50% { height: 12px; } }
@@ -134,64 +144,49 @@ body {
 /* ── Status / console log ────────────────────────────────────────────────── */
 .status-log {
   scrollbar-width: thin;
-  scrollbar-color: #2a2a2a transparent;
+  scrollbar-color: var(--border) transparent;
 }
+.status-log::-webkit-scrollbar       { width: 3px; }
+.status-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-.status-log::-webkit-scrollbar { width: 3px; }
-.status-log::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 2px;
-}
-
-/* ── Gold gradient text ──────────────────────────────────────────────────── */
+/* ── Gradient text (logo + headings) ─────────────────────────────────────── */
 .text-gold-gradient {
-  background: linear-gradient(135deg, #b8922e 0%, #e8c96a 45%, #c9a84c 75%, #e8c96a 100%);
+  background: linear-gradient(
+    135deg,
+    #A855F7 0%,
+    #E879F9 35%,
+    #22D3EE 75%,
+    #A855F7 100%
+  );
+  background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  animation: gradientShift 6s ease-in-out infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% center; }
+  50%       { background-position: 100% center; }
 }
 
 /* ── Glass panel ─────────────────────────────────────────────────────────── */
 .glass {
-  background: rgba(26, 26, 26, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(15, 15, 30, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(147, 51, 234, 0.15);
 }
 
-/* ── Ken Burns cinematic pan-zoom ────────────────────────────────────────── */
-@keyframes kenBurns0 {
-  0%   { transform: scale(1.00) translate(0%, 0%); }
-  100% { transform: scale(1.10) translate(-3%, -2%); }
-}
-@keyframes kenBurns1 {
-  0%   { transform: scale(1.05) translate(2%, 1%); }
-  100% { transform: scale(1.14) translate(-2%, -3%); }
-}
-@keyframes kenBurns2 {
-  0%   { transform: scale(1.10) translate(-3%, 2%); }
-  100% { transform: scale(1.00) translate(3%, -1%); }
-}
-@keyframes kenBurns3 {
-  0%   { transform: scale(1.00) translate(3%, -2%); }
-  100% { transform: scale(1.12) translate(-1%, 2%); }
-}
-@keyframes kenBurns4 {
-  0%   { transform: scale(1.08) translate(0%, 3%); }
-  100% { transform: scale(1.00) translate(2%, -3%); }
-}
-@keyframes kenBurns5 {
-  0%   { transform: scale(1.00) translate(-2%, -3%); }
-  100% { transform: scale(1.10) translate(3%, 2%); }
-}
-@keyframes kenBurns6 {
-  0%   { transform: scale(1.12) translate(2%, -1%); }
-  100% { transform: scale(1.02) translate(-3%, 3%); }
-}
-@keyframes kenBurns7 {
-  0%   { transform: scale(1.02) translate(-1%, 2%); }
-  100% { transform: scale(1.12) translate(2%, -2%); }
-}
+/* ── Ken Burns ────────────────────────────────────────────────────────────── */
+@keyframes kenBurns0 { 0%   { transform: scale(1.00) translate(0%,  0%);  } 100% { transform: scale(1.10) translate(-3%, -2%); } }
+@keyframes kenBurns1 { 0%   { transform: scale(1.05) translate(2%,  1%);  } 100% { transform: scale(1.14) translate(-2%, -3%); } }
+@keyframes kenBurns2 { 0%   { transform: scale(1.10) translate(-3%, 2%);  } 100% { transform: scale(1.00) translate(3%,  -1%); } }
+@keyframes kenBurns3 { 0%   { transform: scale(1.00) translate(3%,  -2%); } 100% { transform: scale(1.12) translate(-1%,  2%); } }
+@keyframes kenBurns4 { 0%   { transform: scale(1.08) translate(0%,  3%);  } 100% { transform: scale(1.00) translate(2%,  -3%); } }
+@keyframes kenBurns5 { 0%   { transform: scale(1.00) translate(-2%, -3%); } 100% { transform: scale(1.10) translate(3%,   2%); } }
+@keyframes kenBurns6 { 0%   { transform: scale(1.12) translate(2%,  -1%); } 100% { transform: scale(1.02) translate(-3%,  3%); } }
+@keyframes kenBurns7 { 0%   { transform: scale(1.02) translate(-1%,  2%); } 100% { transform: scale(1.12) translate(2%,  -2%); } }
 
 .ken-burns-0 { animation: kenBurns0 var(--kb-duration, 38s) ease-in-out forwards; }
 .ken-burns-1 { animation: kenBurns1 var(--kb-duration, 38s) ease-in-out forwards; }
@@ -205,47 +200,105 @@ body {
 /* ── Pulsing recording dot ───────────────────────────────────────────────── */
 @keyframes record-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  50%       { opacity: 0.2; }
 }
-.recording-dot {
-  animation: record-pulse 1.2s ease-in-out infinite;
-}
+.recording-dot { animation: record-pulse 1.2s ease-in-out infinite; }
 
-/* ── Shimmer loading effect ──────────────────────────────────────────────── */
+/* ── Shimmer loading ──────────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
-  background-size: 800px 100%;
-  animation: shimmer 1.6s infinite linear;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    rgba(147, 51, 234, 0.08) 50%,
+    var(--surface) 75%
+  );
+  background-size: 1200px 100%;
+  animation: shimmer 2s infinite linear;
 }
 
-/* ── History card glow on hover ──────────────────────────────────────────── */
+/* ── History card ─────────────────────────────────────────────────────────── */
+.history-card {
+  transition: all 0.18s ease;
+}
 .history-card:hover {
-  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.25), 0 2px 12px rgba(0,0,0,0.4);
+  box-shadow:
+    0 0 0 1px rgba(147, 51, 234, 0.3),
+    0 4px 20px rgba(147, 51, 234, 0.12);
 }
 
-/* ── Glow ring on active/live indicator ──────────────────────────────────── */
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 4px 1px rgba(201, 168, 76, 0.4); }
-  50%       { box-shadow: 0 0 8px 3px rgba(201, 168, 76, 0.15); }
-}
-.glow-ring {
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-
-/* ── Idle background grain ───────────────────────────────────────────────── */
+/* ── Idle background — nebula tones ──────────────────────────────────────── */
 .idle-bg {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,168,76,0.07) 0%, transparent 70%),
-    #0a0a0a;
+    radial-gradient(ellipse 90% 60% at 15% 0%,
+      rgba(147, 51, 234, 0.13) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 85% 100%,
+      rgba(236, 72, 153, 0.09) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 40% at 50% 50%,
+      rgba(34, 211, 238, 0.04) 0%, transparent 60%),
+    #06060F;
 }
 
-/* ── Smooth visual transitions ────────────────────────────────────────────── */
-.visual-fade {
-  transition: opacity 0.5s ease-in-out;
+/* ── Gradient border card (idle input card) ──────────────────────────────── */
+.card-gradient-border {
+  position: relative;
+  border-radius: 1rem;
+}
+.card-gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(147, 51, 234, 0.5) 0%,
+    rgba(236, 72, 153, 0.3) 50%,
+    rgba(34, 211, 238, 0.2) 100%
+  );
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.card-gradient-border:focus-within::before {
+  opacity: 1;
+}
+
+/* ── Primary CTA button ──────────────────────────────────────────────────── */
+.btn-produce {
+  background: linear-gradient(135deg, #7C3AED 0%, #9333EA 40%, #EC4899 100%);
+  background-size: 200% auto;
+  color: #fff;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 0 0 rgba(147, 51, 234, 0);
+}
+.btn-produce:hover:not(:disabled) {
+  background-position: right center;
+  box-shadow: 0 4px 24px rgba(147, 51, 234, 0.45);
+  transform: translateY(-1px);
+}
+.btn-produce:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.btn-produce:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Closed Captions overlay ─────────────────────────────────────────────── */
+.cc-line {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font-size: clamp(0.875rem, 2vw, 1.15rem);
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  border-radius: 3px;
+  max-width: 80%;
+  text-align: center;
 }
 
 /* ── Control bar button base ─────────────────────────────────────────────── */
