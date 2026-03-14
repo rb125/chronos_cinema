@@ -92,7 +92,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
 class ScriptBeat(BaseModel):
     beat_id: int = Field(ge=1)
     segment_title: str
-    target_duration_seconds: int = Field(default=24, ge=15, le=60)
+    target_duration_seconds: int = Field(default=35, ge=15, le=60)
     narration_script: str
     visual_prompt_veo: str
     fallback_image_prompt: str
@@ -101,7 +101,7 @@ class ScriptBeat(BaseModel):
 class ScriptBlueprint(BaseModel):
     title: str
     music_prompt: str
-    documentary_flow: List[ScriptBeat] = Field(min_length=5, max_length=6)
+    documentary_flow: List[ScriptBeat] = Field(min_length=5, max_length=10)
 
 
 class ChronosAgent:
@@ -300,43 +300,71 @@ class ChronosAgent:
             "title": topic,
             "narration_outline": [
                 (
+                    f"What if everything you knew about {topic} was only the surface? Scientists stare at "
+                    f"{topic} and find a phenomenon so extreme it defies intuition. Today, we pull back the "
+                    "curtain on one of nature's most compelling subjects — beginning with the question that "
+                    "has haunted researchers for generations."
+                ),
+                (
                     f"{topic} is often described as mysterious, but the core mechanics are measurable and "
-                    "predictable. Start from first principles, define the central phenomenon clearly, and frame "
-                    "why scientists care about this topic today."
+                    "predictable. Start from first principles and define the central phenomenon clearly. "
+                    "Use a vivid analogy to ground the viewer, then frame why scientists care about this "
+                    "topic in the context of the wider universe."
                 ),
                 (
-                    f"Break down how {topic} works step by step with one concrete analogy and one physical detail. "
-                    "Explain what changes over time and what an observer would actually see in a realistic scene."
+                    f"Break down how {topic} works step by step with one concrete analogy and precise physical details. "
+                    "Explain what changes over time and what an observer would actually see. "
+                    "Walk through cause and effect, showing why each mechanism leads to the next."
                 ),
                 (
-                    f"Move from beginner ideas to intermediate mechanics of {topic}, including at least one "
-                    "counterintuitive effect and why it happens. Tie the explanation directly to visual evidence."
+                    f"Now consider the scale of {topic}. How big, how fast, how extreme does it get? "
+                    "Push into numbers that challenge comprehension and use comparisons to everyday experience "
+                    "to make the scale feel real. This is where the subject truly starts to overwhelm the imagination."
                 ),
                 (
-                    f"Cover advanced implications of {topic} with scientific rigor, including open questions and "
-                    "what current research is trying to resolve. Keep it accurate but accessible."
+                    f"Here is where {topic} turns counterintuitive. The obvious explanation turns out to be wrong. "
+                    "Describe the surprising effect that even experts find startling, and explain precisely why "
+                    "it happens. Tie it directly to a visual or observable consequence."
                 ),
                 (
-                    f"Conclude by connecting {topic} to modern research and future discovery. End with a reflective "
-                    "question that encourages the viewer to think deeper."
+                    f"Humanity has always been shaped by {topic}, even before we had words for it. "
+                    "Describe a historical moment — an ancient observation, a pivotal discovery, or a cultural "
+                    "response — that shows how deeply this subject is woven into human experience."
+                ),
+                (
+                    f"At the frontier of science, {topic} is yielding new secrets. Describe what current "
+                    "research is revealing — a recent experiment, an unexpected measurement, or a theory "
+                    "that is rewriting textbooks. This is the cutting edge as of today."
+                ),
+                (
+                    f"And so we return to the question we began with, but now we see it differently. "
+                    f"{topic} teaches us something profound about the nature of reality. What does it mean "
+                    "for us — as curious minds on a small planet — that such wonders exist? Sit with that "
+                    "question. The universe is still speaking."
                 ),
             ],
             "scene_cues": [
-                {"kind": "video", "prompt": f"Cinematic establishing shot introducing {topic} with realistic scale and atmosphere"},
-                {"kind": "video", "prompt": f"Detailed moving close-up explaining the core structure and mechanism of {topic}"},
-                {"kind": "video", "prompt": f"Scientific visualization sequence showing intermediate mechanics and cause-effect in {topic}"},
-                {"kind": "video", "prompt": f"Advanced documentary sequence linking cutting-edge research questions around {topic}"},
-                {"kind": "video", "prompt": f"Wide cinematic finale connecting {topic} to future exploration and discovery"},
+                {"kind": "video", "prompt": f"Dramatic cinematic opening shot of {topic}, ultra-wide lens, golden hour lighting, slow push-in"},
+                {"kind": "video", "prompt": f"Close-up documentary footage introducing the fundamental nature of {topic}, macro detail"},
+                {"kind": "video", "prompt": f"Dynamic cinematic sequence showing the mechanism of {topic} in action, slow motion"},
+                {"kind": "video", "prompt": f"Epic wide-angle scale shot showing the full magnitude of {topic}, awe-inspiring perspective"},
+                {"kind": "video", "prompt": f"Striking cinematic reveal of the counterintuitive aspect of {topic}, unexpected angle"},
+                {"kind": "video", "prompt": f"Historical documentary recreation or archival-style footage connecting {topic} to human history"},
+                {"kind": "video", "prompt": f"Modern laboratory or research environment showing cutting-edge work on {topic}"},
+                {"kind": "video", "prompt": f"Transcendent wide cinematic final shot, {topic} at cosmic or universal scale, reflective mood"},
             ],
             "image_cues": [
-                {"kind": "image", "prompt": f"Photorealistic documentary still of {topic} with dramatic but scientific lighting"},
-                {"kind": "image", "prompt": f"High-detail educational close-up frame showing core components of {topic}"},
-                {"kind": "image", "prompt": f"Conceptual science illustration frame visualizing intermediate mechanisms in {topic}"},
-                {"kind": "image", "prompt": f"Advanced scientific frame showing unresolved research questions about {topic}"},
-                {"kind": "image", "prompt": f"Inspirational wide final frame connecting {topic} to future discoveries"},
+                {"kind": "image", "prompt": f"Photorealistic dramatic still of {topic}, cinematic lighting, documentary quality"},
+                {"kind": "image", "prompt": f"High-detail scientific illustration of the core structure of {topic}"},
+                {"kind": "image", "prompt": f"Cinematic still showing the mechanism of {topic} in vivid detail"},
+                {"kind": "image", "prompt": f"Awe-inspiring scale comparison image for {topic}"},
+                {"kind": "image", "prompt": f"Dramatic conceptual image of the counterintuitive property of {topic}"},
+                {"kind": "image", "prompt": f"Historical or archival-style image related to human discovery of {topic}"},
+                {"kind": "image", "prompt": f"Modern research image showing frontier science related to {topic}"},
+                {"kind": "image", "prompt": f"Ethereal cosmic or philosophical wide still connecting {topic} to the universe"},
             ],
-            "beat_durations": [24, 24, 24, 24, 24],
-            "music_prompt": "cinematic ambient score, wide strings, subtle pulse, no vocals",
+            "beat_durations": [35, 35, 35, 35, 35, 35, 35, 35],
+            "music_prompt": "cinematic orchestral documentary score, rising strings, subtle tension, no vocals, epic scope",
         }
 
     def _normalize_story_blueprint(self, topic: str, raw: Any) -> Dict[str, Any]:
@@ -365,11 +393,11 @@ class ChronosAgent:
                 scene_cues.append({"kind": "video", "prompt": video_prompt})
                 if image_prompt:
                     image_cues.append({"kind": "image", "prompt": image_prompt})
-                duration_raw = beat.get("target_duration_seconds", 24)
+                duration_raw = beat.get("target_duration_seconds", 35)
                 try:
                     duration_val = int(duration_raw)
                 except Exception:
-                    duration_val = 24
+                    duration_val = 35
                 beat_durations.append(max(15, min(duration_val, 60)))
 
         if not narration_outline:
@@ -428,7 +456,7 @@ class ChronosAgent:
         if not beat_durations:
             beat_durations = list(fallback.get("beat_durations", []))
         if not beat_durations:
-            beat_durations = [24] * len(narration_outline)
+            beat_durations = [35] * len(narration_outline)
 
         music_prompt = str(raw.get("music_prompt") or "").strip() or fallback["music_prompt"]
 
@@ -489,32 +517,40 @@ class ChronosAgent:
 
     async def build_story_blueprint(self, topic: str) -> Dict[str, Any]:
         prompt = (
-            "You are the Script Writer + Director planner for a multimodal educational documentary.\n"
+            "You are the Script Writer + Director planner for a premium multimodal educational documentary.\n"
             "Return valid JSON only with this exact schema:\n"
             "{\n"
             '  "title": "string",\n'
-            '  "music_prompt": "string",\n'
+            '  "music_prompt": "string describing cinematic BGM mood",\n'
             '  "documentary_flow": [\n'
             "    {\n"
             '      "beat_id": 1,\n'
             '      "segment_title": "string",\n'
-            '      "target_duration_seconds": 20,\n'
-            '      "narration_script": "100-150 words",\n'
-            '      "visual_prompt_veo": "video prompt",\n'
-            '      "fallback_image_prompt": "image prompt"\n'
+            '      "target_duration_seconds": 35,\n'
+            '      "narration_script": "200-250 words of rich narration",\n'
+            '      "visual_prompt_veo": "cinematic video prompt",\n'
+            '      "fallback_image_prompt": "photorealistic still prompt"\n'
             "    }\n"
             "  ]\n"
             "}\n"
             "Constraints:\n"
-            "- Generate exactly 5 beats.\n"
-            "- Beat progression: beginner -> intermediate -> advanced.\n"
-            "- Narration per beat must be 100-150 words and factually accurate.\n"
-            "- visual_prompt_veo must be cinematic moving-shot language.\n"
-            "- fallback_image_prompt must be fast-generating and photorealistic.\n"
-            "- target_duration_seconds should be between 20 and 30.\n"
+            "- Generate exactly 8 beats.\n"
+            "- Beat progression follows this arc:\n"
+            "  1. Hook: Open with a stunning fact or question that grabs attention\n"
+            "  2. Foundation: Establish core concepts with vivid real-world analogy\n"
+            "  3. Mechanism: Explain HOW it works step by step with precise detail\n"
+            "  4. Scale & Complexity: Show the full scope - size, power, or intricacy\n"
+            "  5. Counterintuitive: Reveal the surprising, counterintuitive aspect\n"
+            "  6. Human Connection: Connect to human history, culture, or discovery\n"
+            "  7. Frontier: Describe what scientists/researchers are discovering NOW\n"
+            "  8. Reflection: End with a philosophical question that lingers\n"
+            "- Each narration_script must be exactly 200-250 words, factually accurate, vivid.\n"
+            "- visual_prompt_veo: cinematic moving-shot language, photorealistic, documentary style.\n"
+            "- fallback_image_prompt: dramatic, high-detail, photorealistic still.\n"
+            "- target_duration_seconds must be between 30 and 40.\n"
+            "- music_prompt must describe a 2-minute orchestral documentary score mood.\n"
             "- No markdown, no commentary, no trailing commas.\n"
-            f"Topic: {topic}\n"
-            "Use the user's name only if explicitly provided later by the narrator."
+            f"Topic: {topic}"
         )
         try:
             response = await asyncio.to_thread(
@@ -537,8 +573,8 @@ class ChronosAgent:
             repair_prompt = (
                 "Fix this malformed JSON and return valid JSON only.\n"
                 "Required keys: title, music_prompt, documentary_flow.\n"
-                "documentary_flow must have exactly 5 objects and each object must contain:\n"
-                "beat_id, segment_title, target_duration_seconds (20-30), narration_script (100-150 words), "
+                "documentary_flow must have exactly 8 objects and each object must contain:\n"
+                "beat_id, segment_title, target_duration_seconds (30-40), narration_script (200-250 words), "
                 "visual_prompt_veo, fallback_image_prompt.\n"
                 f"Malformed JSON:\n{raw_text}"
             )
@@ -1055,6 +1091,57 @@ class ChronosAgent:
             pass
         return "cinematic ambient orchestral strings slow-building atmospheric pulse"
 
+    async def build_quiz(self, topic: str, script_content: str) -> List[Dict[str, Any]]:
+        """Generate 5 structured MCQ questions based on documentary content."""
+        prompt = (
+            f"You are creating a quiz for an educational documentary about: {topic}\n\n"
+            "Documentary content summary:\n"
+            f"{script_content[:3000]}\n\n"
+            "Generate exactly 5 multiple-choice quiz questions. Return valid JSON only:\n"
+            "{\n"
+            '  "questions": [\n'
+            "    {\n"
+            '      "question": "string",\n'
+            '      "options": ["A. text", "B. text", "C. text", "D. text"],\n'
+            '      "correct": "A",\n'
+            '      "explanation": "1-2 sentence explanation of the correct answer"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Rules:\n"
+            "- Questions must test specific facts from the documentary content\n"
+            "- Each question should test a DIFFERENT concept\n"
+            "- Options should be plausible but clearly only one is correct\n"
+            "- Progress from easier to harder questions\n"
+            "- Explanations reinforce learning\n"
+            "- No markdown, valid JSON only"
+        )
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.text_model,
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
+            )
+            parsed = self._parse_json_loose(response.text or "")
+            if parsed and isinstance(parsed.get("questions"), list):
+                questions = parsed["questions"]
+                valid = []
+                for q in questions:
+                    if (
+                        isinstance(q, dict)
+                        and q.get("question")
+                        and isinstance(q.get("options"), list)
+                        and len(q["options"]) >= 3
+                        and q.get("correct")
+                        and q.get("explanation")
+                    ):
+                        valid.append(q)
+                return valid[:5]
+        except Exception as e:
+            print(f"Quiz generation failed: {e}")
+        return []
+
     @staticmethod
     def _build_story_beats(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         beats: List[Dict[str, Any]] = []
@@ -1097,7 +1184,7 @@ class ChronosAgent:
                     "narration": narration,
                     "video_prompt": str(cue.get("prompt", "")).strip(),
                     "image_prompt": str(image_cue.get("prompt", "")).strip(),
-                    "target_duration_seconds": durations[idx % len(durations)] if durations else 24,
+                    "target_duration_seconds": durations[idx % len(durations)] if durations else 35,
                 }
             )
         return beats
@@ -1147,42 +1234,53 @@ class ChronosAgent:
         user_name: str,
     ) -> str:
         personalization = (
-            f"The viewer's name is {user_name}. Address them naturally once in this beat."
+            f"The viewer's name is {user_name}. Address them warmly by name once in this beat."
             if user_name
-            else (
-                "If this is beat 1, ask the viewer what name they prefer in one short sentence. "
-                "If this is not beat 1, do not ask for a name."
-            )
+            else ""
         )
-        interactive_check = (
-            "End this beat with one short reflective question to keep the viewer engaged."
-            if beat_index in {3, 6}
-            else "Do not end with a question in this beat."
+        # Beat arc labels for context
+        beat_arc = {
+            1: "HOOK — grab attention with a stunning fact",
+            2: "FOUNDATION — lay down core concepts",
+            3: "MECHANISM — explain how it works in detail",
+            4: "SCALE — show the full scope and complexity",
+            5: "COUNTERINTUITIVE — reveal the surprising twist",
+            6: "HUMAN CONNECTION — link to history or culture",
+            7: "FRONTIER — describe cutting-edge research",
+            8: "REFLECTION — philosophical closing thought",
+        }
+        arc_label = beat_arc.get(beat_index, f"Beat {beat_index}")
+        # Add a brief pause/reflection cue on beats 4 and 7
+        pacing_cue = (
+            "Pause for one breath mid-beat before the second half."
+            if beat_index in {4, 7}
+            else ""
         )
         return (
             f"Documentary title: {title}\n"
             f"Topic: {topic}\n"
-            f"Beat: {beat_index}/{beat_count}\n"
-            f"Target narration duration: {beat.get('target_duration_seconds', 24)} seconds\n"
-            f"Visual cue for this beat: {beat.get('video_prompt', '')}\n"
-            f"Narration script (read this exactly): {beat.get('narration', '')}\n\n"
-            "Read the narration script exactly as written.\n"
-            "Do not summarize, shorten, or paraphrase the script.\n"
-            "Do not stop speaking until you reach the final sentence of this beat script.\n"
-            "Stay tightly aligned with this visual cue and do not jump ahead.\n"
+            f"Beat {beat_index}/{beat_count} — {arc_label}\n"
+            f"Target duration: {beat.get('target_duration_seconds', 35)} seconds\n"
+            f"Visual cue: {beat.get('video_prompt', '')}\n\n"
+            f"Narration (deliver word-for-word, with full dramatic pacing):\n"
+            f"{beat.get('narration', '')}\n\n"
+            "CRITICAL: Read every word of the narration above. Do NOT shorten or skip.\n"
+            "Speak with documentary gravitas — measured pace, vivid emphasis.\n"
             "Do not call any tools unless the user explicitly asks to change visuals or music.\n"
-            f"{interactive_check}\n"
+            f"{pacing_cue}\n"
             f"{personalization}"
-        )
+        ).strip()
 
     @staticmethod
     def _build_follow_up_prompt(topic: str, user_name: str) -> str:
-        viewer = user_name if user_name else "there"
+        viewer = user_name if user_name else "viewer"
         return (
-            f"The story about {topic} has finished.\n"
-            f"Address the viewer as {viewer}.\n"
-            "Ask one engaging follow-up question, then ask one quick quiz question "
-            "(multiple-choice with 3 options), then pause for user input."
+            f"The documentary about {topic} has just finished.\n"
+            f"Address the viewer as '{viewer}'.\n"
+            "Say a warm 2-3 sentence closing reflection that connects the topic to the "
+            "viewer's everyday life or a sense of wonder.\n"
+            "Then invite them to explore the quiz questions displayed on screen.\n"
+            "Keep it brief — no more than 30 seconds of speaking."
         )
 
     async def start_session(self, websocket: WebSocket):
@@ -1317,162 +1415,38 @@ STYLE:
                     current_topic = topic
                     current_user_name = user_name
 
-                    beat_video_tasks: Dict[int, asyncio.Task] = {}
-                    beat_image_tasks: Dict[int, asyncio.Task] = {}
-                    visual_wait_notice_slots: Set[int] = set()
-                    current_visual_slot_sent = -1
-                    slot_visual_mode: Dict[int, str] = {}
-
-                    async def prefetch_visual_slot(
-                        slot_index: int,
-                        beats: List[Dict[str, str]],
-                        visual_plan_indices: List[int],
-                    ):
-                        if slot_index < 0 or slot_index >= len(visual_plan_indices):
+                    async def render_and_deliver_beat_visual(beat_idx: int, beat: Dict[str, Any]):
+                        """Render video (with image fallback) for a beat and self-deliver when ready."""
+                        video_prompt = beat.get("video_prompt") or f"Cinematic documentary shot for {topic}"
+                        image_prompt = beat.get("image_prompt") or (
+                            "Photorealistic documentary still. " + video_prompt
+                        )
+                        payload = await self._render_video_payload(
+                            video_prompt,
+                            websocket=websocket,
+                            status_prefix=f"[Video Agent][Beat {beat_idx + 1}]",
+                        )
+                        if payload:
+                            payload["beat_index"] = beat_idx
+                            await self._send(websocket, payload)
+                            await self._send(
+                                websocket,
+                                {"type": "status", "content": f"[Video Agent] Beat {beat_idx + 1} visual delivered."},
+                            )
                             return
-                        beat_index_for_slot = visual_plan_indices[slot_index]
-                        beat = beats[beat_index_for_slot]
-                        if slot_index not in beat_video_tasks:
-                            beat_prompt = beat.get("video_prompt") or f"Cinematic documentary shot for {topic}"
-                            beat_video_tasks[slot_index] = self._spawn_task(
-                                active_tasks,
-                                self._render_video_payload(
-                                    beat_prompt,
-                                    websocket=websocket,
-                                    status_prefix=f"[Video Agent][Segment {slot_index + 1}]",
-                                ),
-                                f"video-segment-{slot_index + 1}",
-                            )
-                        if slot_index not in beat_image_tasks:
-                            image_prompt = beat.get("image_prompt") or (
-                                "Photorealistic educational documentary still. "
-                                + str(beat.get("video_prompt") or "")
-                            )
-                            beat_image_tasks[slot_index] = self._spawn_task(
-                                active_tasks,
-                                self._render_image_payload(
-                                    image_prompt,
-                                    websocket=websocket,
-                                    status_prefix=f"[Image Agent][Segment {slot_index + 1}]",
-                                ),
-                                f"image-segment-{slot_index + 1}",
-                            )
-
-                    async def try_take_prefetched_video(slot_index: int) -> Optional[Dict[str, Any]]:
-                        task = beat_video_tasks.get(slot_index)
-                        if not task or not task.done():
-                            return None
-                        beat_video_tasks.pop(slot_index, None)
-                        try:
-                            return task.result()
-                        except Exception as task_error:
-                            print(f"Video segment {slot_index + 1} task failed: {task_error}")
-                            return None
-
-                    async def try_take_prefetched_image(slot_index: int) -> Optional[Dict[str, Any]]:
-                        task = beat_image_tasks.get(slot_index)
-                        if not task or not task.done():
-                            return None
-                        beat_image_tasks.pop(slot_index, None)
-                        try:
-                            return task.result()
-                        except Exception as task_error:
-                            print(f"Image segment {slot_index + 1} task failed: {task_error}")
-                            return None
-
-                    async def deliver_visual_slot(
-                        slot_index: int,
-                        *,
-                        wait_seconds: int,
-                        opening: bool = False,
-                    ) -> Optional[str]:
-                        if slot_index < 0:
-                            return None
-
-                        video_payload = await try_take_prefetched_video(slot_index)
-                        if video_payload:
-                            await self._send_video_payload(
+                        # Video failed — try image fallback
+                        img_payload = await self._render_image_payload(
+                            image_prompt,
+                            websocket=websocket,
+                            status_prefix=f"[Image Agent][Beat {beat_idx + 1}]",
+                        )
+                        if img_payload:
+                            img_payload["beat_index"] = beat_idx
+                            await self._send(websocket, img_payload)
+                            await self._send(
                                 websocket,
-                                video_payload,
-                                delivered_status=(
-                                    "[Video Agent] Opening shot delivered."
-                                    if opening
-                                    else f"[Video Agent] Segment {slot_index + 1} delivered."
-                                ),
+                                {"type": "status", "content": f"[Image Agent] Beat {beat_idx + 1} storyboard delivered."},
                             )
-                            slot_visual_mode[slot_index] = "video"
-                            return "video"
-
-                        image_payload = await try_take_prefetched_image(slot_index)
-                        if image_payload:
-                            await self._send_image_payload(
-                                websocket,
-                                image_payload,
-                                delivered_status=(
-                                    "[Image Agent] Opening storyboard frame delivered."
-                                    if opening
-                                    else (
-                                        f"[Image Agent] Segment {slot_index + 1} storyboard frame delivered "
-                                        "while cinematic clip renders."
-                                    )
-                                ),
-                            )
-                            slot_visual_mode[slot_index] = "image"
-                            return "image"
-
-                        pending_tasks = []
-                        image_task = beat_image_tasks.get(slot_index)
-                        video_task = beat_video_tasks.get(slot_index)
-                        if image_task and not image_task.done():
-                            pending_tasks.append(image_task)
-                        if video_task and not video_task.done():
-                            pending_tasks.append(video_task)
-
-                        if pending_tasks and wait_seconds > 0:
-                            await self._wait_with_story_updates(
-                                websocket=websocket,
-                                tasks=pending_tasks,
-                                updates=[
-                                    "[Script Agent] Finalizing beat script pacing...",
-                                    "[Image Agent] Building the next storyboard frame...",
-                                    "[Video Agent] Rendering cinematic motion for this beat...",
-                                    "[Studio] Aligning narration timing with visual continuity...",
-                                ],
-                                timeout_seconds=wait_seconds,
-                            )
-
-                        video_payload = await try_take_prefetched_video(slot_index)
-                        if video_payload:
-                            await self._send_video_payload(
-                                websocket,
-                                video_payload,
-                                delivered_status=(
-                                    "[Video Agent] Opening shot delivered."
-                                    if opening
-                                    else f"[Video Agent] Segment {slot_index + 1} delivered."
-                                ),
-                            )
-                            slot_visual_mode[slot_index] = "video"
-                            return "video"
-
-                        image_payload = await try_take_prefetched_image(slot_index)
-                        if image_payload:
-                            await self._send_image_payload(
-                                websocket,
-                                image_payload,
-                                delivered_status=(
-                                    "[Image Agent] Opening storyboard frame delivered."
-                                    if opening
-                                    else (
-                                        f"[Image Agent] Segment {slot_index + 1} storyboard frame delivered "
-                                        "while cinematic clip renders."
-                                    )
-                                ),
-                            )
-                            slot_visual_mode[slot_index] = "image"
-                            return "image"
-
-                        return None
 
                     try:
                         await self._send(websocket, {"type": "status", "content": "[Script Agent] Drafting your narrative arc..."})
@@ -1487,10 +1461,10 @@ STYLE:
                                     "narration": f"Cinematic introduction to {topic}.",
                                     "video_prompt": f"Cinematic opening shot for {topic}",
                                     "image_prompt": f"Photorealistic documentary still of {topic}",
-                                    "target_duration_seconds": 24,
+                                    "target_duration_seconds": 35,
                                 }
                             ]
-                        target_beats = 5
+                        target_beats = 8
                         if len(beats) < target_beats:
                             fallback = self._build_story_beats(self._default_story_blueprint(topic))
                             source = fallback or beats
@@ -1498,7 +1472,7 @@ STYLE:
                                 template = source[len(beats) % len(source)]
                                 beats.append(
                                     {
-                                        "narration": template.get("narration", f"Explain {topic} with clear detail."),
+                                        "narration": template.get("narration", f"Explore {topic} further."),
                                         "video_prompt": template.get(
                                             "video_prompt",
                                             f"Cinematic documentary shot about {topic}",
@@ -1507,35 +1481,24 @@ STYLE:
                                             "image_prompt",
                                             f"Photorealistic documentary still about {topic}",
                                         ),
-                                        "target_duration_seconds": template.get(
-                                            "target_duration_seconds",
-                                            24,
-                                        ),
+                                        "target_duration_seconds": template.get("target_duration_seconds", 35),
                                     }
                                 )
-                        if len(beats) > 6:
-                            beats = beats[:6]
+                        if len(beats) > 10:
+                            beats = beats[:10]
 
                         title = str(blueprint.get("title") or topic).strip() or topic
-                        await self._send(websocket, {"type": "topic_received", "content": topic})
+                        await self._send(websocket, {"type": "topic_received", "content": topic, "title": title})
                         await self._send(
                             websocket,
                             {
                                 "type": "status",
-                                "content": f"[Script Agent] Story blueprint finalized for '{topic}' ({len(beats)} beats).",
+                                "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready.",
                             },
                         )
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": "[Studio] Preparing synchronized visuals, narration, and score..."},
-                        )
 
-                        visual_segment_target = max(1, len(beats))
-                        visual_plan_indices = list(range(visual_segment_target))
-                        if not visual_plan_indices:
-                            visual_plan_indices = [0]
-
-                        music_task = self._spawn_task(
+                        # Fire BGM generation — runs in background, delivers when ready
+                        self._spawn_task(
                             active_tasks,
                             self.generate_background_score_audio(
                                 blueprint.get("music_prompt", ""),
@@ -1544,109 +1507,44 @@ STYLE:
                             "music",
                         )
 
-                        await prefetch_visual_slot(0, beats, visual_plan_indices)
-                        await prefetch_visual_slot(1, beats, visual_plan_indices)
-                        await prefetch_visual_slot(2, beats, visual_plan_indices)
-
-                        opening_mode = await deliver_visual_slot(0, wait_seconds=18, opening=True)
-                        if opening_mode:
-                            current_visual_slot_sent = 0
-                        else:
-                            await self._send(
-                                websocket,
-                                {
-                                    "type": "status",
-                                    "content": (
-                                        "[Studio] Opening visual is still rendering; holding the first beat briefly "
-                                        "to keep your scene and narration aligned."
-                                    ),
-                                },
-                            )
-                        if music_task and not music_task.done():
-                            await self._send(
-                                websocket,
-                                {
-                                    "type": "status",
-                                    "content": "[Music Agent] Score generation continues in parallel while narration begins.",
-                                },
+                        # Fire ALL beat visual renders in parallel — each self-delivers when done.
+                        # Narration NEVER waits for visuals; visuals arrive and display independently.
+                        for beat_idx, beat in enumerate(beats):
+                            self._spawn_task(
+                                active_tasks,
+                                render_and_deliver_beat_visual(beat_idx, beat),
+                                f"visual-beat-{beat_idx + 1}",
                             )
 
                         await self._send(
                             websocket,
-                            {"type": "status", "content": "[Studio] Sequence locked. Rolling your documentary now."},
+                            {
+                                "type": "status",
+                                "content": (
+                                    f"[Studio] {len(beats)} visual renders started in parallel. "
+                                    "Narration begins now — visuals arrive as they render."
+                                ),
+                            },
                         )
 
+                        # Sequential narration — each beat sends audio immediately with no visual gating
                         for beat_index, beat in enumerate(beats):
-                            desired_slot = min(
-                                beat_index,
-                                len(visual_plan_indices) - 1,
-                            )
-                            await prefetch_visual_slot(desired_slot, beats, visual_plan_indices)
-                            await prefetch_visual_slot(desired_slot + 1, beats, visual_plan_indices)
-                            await prefetch_visual_slot(desired_slot + 2, beats, visual_plan_indices)
-
-                            current_mode = slot_visual_mode.get(current_visual_slot_sent)
-                            if current_mode == "image" and current_visual_slot_sent >= 0:
-                                upgraded_video = await try_take_prefetched_video(current_visual_slot_sent)
-                                if upgraded_video:
-                                    await self._send_video_payload(
-                                        websocket,
-                                        upgraded_video,
-                                        delivered_status=(
-                                            f"[Video Agent] Upgraded segment {current_visual_slot_sent + 1} "
-                                            "from storyboard frame to cinematic clip."
-                                        ),
-                                    )
-                                    slot_visual_mode[current_visual_slot_sent] = "video"
-
-                            if desired_slot > current_visual_slot_sent:
-                                for slot in range(current_visual_slot_sent + 1, desired_slot + 1):
-                                    mode = await deliver_visual_slot(slot, wait_seconds=10)
-                                    if mode:
-                                        current_visual_slot_sent = slot
-                                        visual_wait_notice_slots.discard(slot)
-                                        continue
-                                    if slot not in visual_wait_notice_slots:
-                                        visual_wait_notice_slots.add(slot)
-                                        await self._send(
-                                            websocket,
-                                            {
-                                                "type": "status",
-                                                "content": (
-                                                    f"[Studio] Holding beat {beat_index + 1} momentarily while "
-                                                    f"segment {slot + 1} visual finishes."
-                                                ),
-                                            },
-                                        )
-                                    break
-
-                            if beat_index == 0 and current_visual_slot_sent < 0:
-                                opening_mode = await deliver_visual_slot(0, wait_seconds=12, opening=True)
-                                if opening_mode:
-                                    current_visual_slot_sent = 0
-                                    visual_wait_notice_slots.discard(0)
-                                elif 0 not in visual_wait_notice_slots:
-                                    visual_wait_notice_slots.add(0)
-                                    await self._send(
-                                        websocket,
-                                        {
-                                            "type": "status",
-                                            "content": (
-                                                "[Studio] Opening visual still pending. Starting narration now with "
-                                                "a descriptive lead-in to avoid dead air."
-                                            ),
-                                        },
-                                    )
-
                             if interrupt_event.is_set():
                                 interrupt_event.clear()
                                 await self._send(
                                     websocket,
-                                    {
-                                        "type": "status",
-                                        "content": "[Delegator] Integrating your interruption before the next beat.",
-                                    },
+                                    {"type": "status", "content": "[Delegator] Processing interruption before next beat."},
                                 )
+
+                            await self._send(
+                                websocket,
+                                {
+                                    "type": "beat_start",
+                                    "beat_index": beat_index,
+                                    "total_beats": len(beats),
+                                    "title": title,
+                                },
+                            )
 
                             beat_prompt = self._build_beat_prompt(
                                 topic=topic,
@@ -1658,45 +1556,51 @@ STYLE:
                             )
                             turn_complete_event.clear()
                             await send_turn_input(beat_prompt)
-                            got_turn = await wait_for_turn_complete(timeout_seconds=95)
+                            got_turn = await wait_for_turn_complete(timeout_seconds=120)
                             if not got_turn:
                                 await self._send(
                                     websocket,
-                                    {
-                                        "type": "status",
-                                        "content": "[Delegator] Narration segment timed out. Advancing to keep sync.",
-                                    },
+                                    {"type": "status", "content": f"[Delegator] Beat {beat_index + 1} timed out. Advancing."},
                                 )
 
-                        for index, task in list(beat_video_tasks.items()):
-                            if task.done():
-                                beat_video_tasks.pop(index, None)
-                                continue
-                            task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await task
-                            beat_video_tasks.pop(index, None)
+                            await self._send(
+                                websocket,
+                                {"type": "beat_end", "beat_index": beat_index},
+                            )
 
-                        for index, task in list(beat_image_tasks.items()):
-                            if task.done():
-                                beat_image_tasks.pop(index, None)
-                                continue
-                            task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await task
-                            beat_image_tasks.pop(index, None)
+                        # Generate quiz from script content
+                        script_content = "\n\n".join(
+                            f"Beat {i + 1}: {b.get('narration', '')}" for i, b in enumerate(beats)
+                        )
+                        await self._send(
+                            websocket,
+                            {"type": "status", "content": "[Quiz Agent] Generating quiz questions from documentary content..."},
+                        )
+                        quiz_questions = await self.build_quiz(topic, script_content)
+                        if quiz_questions:
+                            await self._send(
+                                websocket,
+                                {"type": "quiz_data", "questions": quiz_questions, "topic": topic},
+                            )
+                            await self._send(
+                                websocket,
+                                {"type": "status", "content": f"[Quiz Agent] {len(quiz_questions)}-question quiz ready."},
+                            )
+                        else:
+                            await self._send(
+                                websocket,
+                                {"type": "status", "content": "[Quiz Agent] Quiz generation skipped."},
+                            )
 
                         await self._send(websocket, {"type": "story_complete"})
                         await self._send(
                             websocket,
-                            {
-                                "type": "status",
-                                "content": "[Studio] Story playback complete. Transitioning to interactive Q&A.",
-                            },
+                            {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."},
                         )
                         turn_complete_event.clear()
                         await send_turn_input(self._build_follow_up_prompt(topic, user_name))
                         _ = await wait_for_turn_complete(timeout_seconds=60)
+
                     except asyncio.CancelledError:
                         await self._send(
                             websocket,

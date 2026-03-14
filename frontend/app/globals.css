@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0a;
+  --text: #e8e8e8;
+  --gold: #c9a84c;
+  --gold-light: #e8c96a;
+  --card: #1a1a1a;
+  --border: #2a2a2a;
+  --muted: #888888;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Cinema letterbox effect */
+.cinema-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  overflow: hidden;
+}
+
+.cinema-frame::before,
+.cinema-frame::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8%;
+  background: #000;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.cinema-frame::before {
+  top: 0;
+}
+
+.cinema-frame::after {
+  bottom: 0;
+}
+
+/* Subtitle rendering */
+.subtitle-text {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+  font-size: clamp(0.85rem, 2vw, 1.15rem);
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+
+/* Beat progress bar */
+.beat-segment {
+  transition: all 0.3s ease;
+}
+
+/* Quiz option hover */
+.quiz-option {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.quiz-option:hover:not(.answered) {
+  border-color: var(--gold);
+  background: rgba(201, 168, 76, 0.08);
+  transform: translateX(4px);
+}
+
+.quiz-option.correct {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.quiz-option.wrong {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* Scanline effect for cinematic feel */
+.scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* Vignette overlay */
+.vignette {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 60%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+  pointer-events: none;
+}
+
+/* Audio waveform animation */
+@keyframes wave1 {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+@keyframes wave2 {
+  0%, 100% { height: 8px; }
+  50% { height: 20px; }
+}
+@keyframes wave3 {
+  0%, 100% { height: 6px; }
+  50% { height: 14px; }
+}
+
+.wave-bar:nth-child(1) { animation: wave1 0.6s ease-in-out infinite; }
+.wave-bar:nth-child(2) { animation: wave2 0.6s ease-in-out infinite 0.1s; }
+.wave-bar:nth-child(3) { animation: wave3 0.6s ease-in-out infinite 0.2s; }
+.wave-bar:nth-child(4) { animation: wave2 0.6s ease-in-out infinite 0.3s; }
+.wave-bar:nth-child(5) { animation: wave1 0.6s ease-in-out infinite 0.15s; }
+
+/* Scroll for status log */
+.status-log {
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+.status-log::-webkit-scrollbar {
+  width: 3px;
+}
+
+.status-log::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 2px;
+}
+
+/* Gold gradient text */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #c9a84c 0%, #e8c96a 50%, #c9a84c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth video/image transitions */
+.visual-transition {
+  transition: opacity 0.6s ease-in-out;
+}
+
+/* Pulsing recording indicator */
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.recording-dot {
+  animation: record-pulse 1.2s ease-in-out infinite;
+}
