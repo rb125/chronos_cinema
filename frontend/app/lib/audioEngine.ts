@@ -166,8 +166,9 @@ export class AudioEngine {
     this.bgmSource = source;
     this.bgmPlaying = true;
 
-    // Fade BGM in
-    const targetVol = BGM_VOLUME_FULL;
+    // If narration is currently active keep BGM ducked so it doesn't blast
+    // over the voice. duckBgm() / restoreBgm() will handle the transition.
+    const targetVol = this.isNarrationActive() ? BGM_VOLUME_DUCKED : BGM_VOLUME_FULL;
     this.bgmGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.8);
   }
 
@@ -250,6 +251,20 @@ export class AudioEngine {
       this.ctx.currentTime,
       0.3
     );
+  }
+
+  /** Fade out and stop BGM only (call when documentary ends, before quiz). */
+  stopBgm(fadeSeconds = 2): void {
+    if (!this.bgmGain || !this.ctx) return;
+    const timeConstant = fadeSeconds / 3;
+    this.bgmGain.gain.setTargetAtTime(0, this.ctx.currentTime, timeConstant);
+    const stopAt = this.ctx.currentTime + fadeSeconds * 3;
+    if (this.bgmSource) {
+      try { this.bgmSource.stop(stopAt); } catch {}
+      this.bgmSource = null;
+    }
+    this._stopFallbackOscillators();
+    this.bgmPlaying = false;
   }
 
   /** Stop all audio and release resources. */

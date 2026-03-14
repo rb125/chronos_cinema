@@ -398,7 +398,7 @@ export default function ChronosCinema() {
         }
 
         case "story_complete": {
-          audioEngineRef.current?.restoreBgm();
+          audioEngineRef.current?.stopBgm(2);
           storyCompleteRef.current = true;
           storyCompleteRefLocal.current = true;
 
@@ -608,6 +608,9 @@ export default function ChronosCinema() {
 
       isReplayRef.current = false;
       setIsReplaying(false);
+
+      // Fade out BGM before transitioning to quiz
+      audioEngineRef.current?.stopBgm(2);
 
       if (replayAbortRef.current) return;
 

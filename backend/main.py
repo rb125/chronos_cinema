@@ -1508,7 +1508,8 @@ STYLE:
                                 print(f"Beat {beat_index + 1} session error: {send_err}")
                                 await self._send(websocket, {"type": "status", "content": f"[Studio] Session interrupted at beat {beat_index + 1} — ending documentary early."})
                                 break
-                            got_turn = await wait_for_turn_complete(timeout_seconds=30)
+                            beat_timeout = max(int(beat.get("target_duration_seconds", 15)) + 30, 60)
+                            got_turn = await wait_for_turn_complete(timeout_seconds=beat_timeout)
                             if not got_turn:
                                 await self._send(
                                     websocket,
