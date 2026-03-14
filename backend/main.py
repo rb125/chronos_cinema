@@ -92,7 +92,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
 class ScriptBeat(BaseModel):
     beat_id: int = Field(ge=1)
     segment_title: str
-    target_duration_seconds: int = Field(default=35, ge=15, le=60)
+    target_duration_seconds: int = Field(default=15, ge=15, le=60)
     narration_script: str
     visual_prompt_veo: str
     fallback_image_prompt: str
@@ -300,70 +300,35 @@ class ChronosAgent:
             "title": topic,
             "narration_outline": [
                 (
-                    f"What if everything you knew about {topic} was only the surface? Scientists stare at "
-                    f"{topic} and find a phenomenon so extreme it defies intuition. Today, we pull back the "
-                    "curtain on one of nature's most compelling subjects — beginning with the question that "
-                    "has haunted researchers for generations."
+                    f"What if everything you knew about {topic} was only the surface? "
+                    f"Scientists stare at {topic} and find a phenomenon so extreme it defies intuition."
                 ),
                 (
-                    f"{topic} is often described as mysterious, but the core mechanics are measurable and "
-                    "predictable. Start from first principles and define the central phenomenon clearly. "
-                    "Use a vivid analogy to ground the viewer, then frame why scientists care about this "
-                    "topic in the context of the wider universe."
+                    f"{topic} is measurable and predictable. At its core, one vivid analogy unlocks everything — "
+                    "and that is where we begin."
                 ),
                 (
-                    f"Break down how {topic} works step by step with one concrete analogy and precise physical details. "
-                    "Explain what changes over time and what an observer would actually see. "
-                    "Walk through cause and effect, showing why each mechanism leads to the next."
+                    f"Here is how {topic} actually works: cause leads to effect in a chain "
+                    "that, once seen, cannot be unseen."
                 ),
                 (
-                    f"Now consider the scale of {topic}. How big, how fast, how extreme does it get? "
-                    "Push into numbers that challenge comprehension and use comparisons to everyday experience "
-                    "to make the scale feel real. This is where the subject truly starts to overwhelm the imagination."
-                ),
-                (
-                    f"Here is where {topic} turns counterintuitive. The obvious explanation turns out to be wrong. "
-                    "Describe the surprising effect that even experts find startling, and explain precisely why "
-                    "it happens. Tie it directly to a visual or observable consequence."
-                ),
-                (
-                    f"Humanity has always been shaped by {topic}, even before we had words for it. "
-                    "Describe a historical moment — an ancient observation, a pivotal discovery, or a cultural "
-                    "response — that shows how deeply this subject is woven into human experience."
-                ),
-                (
-                    f"At the frontier of science, {topic} is yielding new secrets. Describe what current "
-                    "research is revealing — a recent experiment, an unexpected measurement, or a theory "
-                    "that is rewriting textbooks. This is the cutting edge as of today."
-                ),
-                (
-                    f"And so we return to the question we began with, but now we see it differently. "
-                    f"{topic} teaches us something profound about the nature of reality. What does it mean "
-                    "for us — as curious minds on a small planet — that such wonders exist? Sit with that "
-                    "question. The universe is still speaking."
+                    f"And so we return to the question we began with, but now see it differently. "
+                    f"What does {topic} tell us about the nature of reality? The universe is still speaking."
                 ),
             ],
             "scene_cues": [
                 {"kind": "video", "prompt": f"Dramatic cinematic opening shot of {topic}, ultra-wide lens, golden hour lighting, slow push-in"},
                 {"kind": "video", "prompt": f"Close-up documentary footage introducing the fundamental nature of {topic}, macro detail"},
                 {"kind": "video", "prompt": f"Dynamic cinematic sequence showing the mechanism of {topic} in action, slow motion"},
-                {"kind": "video", "prompt": f"Epic wide-angle scale shot showing the full magnitude of {topic}, awe-inspiring perspective"},
-                {"kind": "video", "prompt": f"Striking cinematic reveal of the counterintuitive aspect of {topic}, unexpected angle"},
-                {"kind": "video", "prompt": f"Historical documentary recreation or archival-style footage connecting {topic} to human history"},
-                {"kind": "video", "prompt": f"Modern laboratory or research environment showing cutting-edge work on {topic}"},
                 {"kind": "video", "prompt": f"Transcendent wide cinematic final shot, {topic} at cosmic or universal scale, reflective mood"},
             ],
             "image_cues": [
                 {"kind": "image", "prompt": f"Photorealistic dramatic still of {topic}, cinematic lighting, documentary quality"},
                 {"kind": "image", "prompt": f"High-detail scientific illustration of the core structure of {topic}"},
                 {"kind": "image", "prompt": f"Cinematic still showing the mechanism of {topic} in vivid detail"},
-                {"kind": "image", "prompt": f"Awe-inspiring scale comparison image for {topic}"},
-                {"kind": "image", "prompt": f"Dramatic conceptual image of the counterintuitive property of {topic}"},
-                {"kind": "image", "prompt": f"Historical or archival-style image related to human discovery of {topic}"},
-                {"kind": "image", "prompt": f"Modern research image showing frontier science related to {topic}"},
                 {"kind": "image", "prompt": f"Ethereal cosmic or philosophical wide still connecting {topic} to the universe"},
             ],
-            "beat_durations": [35, 35, 35, 35, 35, 35, 35, 35],
+            "beat_durations": [15, 15, 15, 15],
             "music_prompt": "cinematic orchestral documentary score, rising strings, subtle tension, no vocals, epic scope",
         }
 
@@ -393,11 +358,11 @@ class ChronosAgent:
                 scene_cues.append({"kind": "video", "prompt": video_prompt})
                 if image_prompt:
                     image_cues.append({"kind": "image", "prompt": image_prompt})
-                duration_raw = beat.get("target_duration_seconds", 35)
+                duration_raw = beat.get("target_duration_seconds", 15)
                 try:
                     duration_val = int(duration_raw)
                 except Exception:
-                    duration_val = 35
+                    duration_val = 15
                 beat_durations.append(max(15, min(duration_val, 60)))
 
         if not narration_outline:
@@ -452,11 +417,11 @@ class ChronosAgent:
                     try:
                         beat_durations.append(max(15, min(int(item), 60)))
                     except Exception:
-                        beat_durations.append(24)
+                        beat_durations.append(15)
         if not beat_durations:
             beat_durations = list(fallback.get("beat_durations", []))
         if not beat_durations:
-            beat_durations = [35] * len(narration_outline)
+            beat_durations = [15] * len(narration_outline)
 
         music_prompt = str(raw.get("music_prompt") or "").strip() or fallback["music_prompt"]
 
@@ -526,29 +491,25 @@ class ChronosAgent:
             "    {\n"
             '      "beat_id": 1,\n'
             '      "segment_title": "string",\n'
-            '      "target_duration_seconds": 35,\n'
-            '      "narration_script": "200-250 words of rich narration",\n'
+            '      "target_duration_seconds": 15,\n'
+            '      "narration_script": "40-50 words of vivid narration",\n'
             '      "visual_prompt_veo": "cinematic video prompt",\n'
             '      "fallback_image_prompt": "photorealistic still prompt"\n'
             "    }\n"
             "  ]\n"
             "}\n"
             "Constraints:\n"
-            "- Generate exactly 8 beats.\n"
+            "- Generate exactly 4 beats.\n"
             "- Beat progression follows this arc:\n"
             "  1. Hook: Open with a stunning fact or question that grabs attention\n"
             "  2. Foundation: Establish core concepts with vivid real-world analogy\n"
-            "  3. Mechanism: Explain HOW it works step by step with precise detail\n"
-            "  4. Scale & Complexity: Show the full scope - size, power, or intricacy\n"
-            "  5. Counterintuitive: Reveal the surprising, counterintuitive aspect\n"
-            "  6. Human Connection: Connect to human history, culture, or discovery\n"
-            "  7. Frontier: Describe what scientists/researchers are discovering NOW\n"
-            "  8. Reflection: End with a philosophical question that lingers\n"
-            "- Each narration_script must be exactly 200-250 words, factually accurate, vivid.\n"
+            "  3. Mechanism: Explain HOW it works — one key insight, precisely\n"
+            "  4. Reflection: End with a philosophical question that lingers\n"
+            "- Each narration_script must be exactly 40-50 words, punchy and vivid.\n"
             "- visual_prompt_veo: cinematic moving-shot language, photorealistic, documentary style.\n"
             "- fallback_image_prompt: dramatic, high-detail, photorealistic still.\n"
-            "- target_duration_seconds must be between 30 and 40.\n"
-            "- music_prompt must describe a 2-minute orchestral documentary score mood.\n"
+            "- target_duration_seconds must be exactly 15.\n"
+            "- music_prompt must describe a 1-minute orchestral documentary score mood.\n"
             "- No markdown, no commentary, no trailing commas.\n"
             f"Topic: {topic}"
         )
@@ -1199,7 +1160,7 @@ class ChronosAgent:
                     "narration": narration,
                     "video_prompt": str(cue.get("prompt", "")).strip(),
                     "image_prompt": str(image_cue.get("prompt", "")).strip(),
-                    "target_duration_seconds": durations[idx % len(durations)] if durations else 35,
+                    "target_duration_seconds": durations[idx % len(durations)] if durations else 15,
                 }
             )
         return beats
@@ -1275,7 +1236,7 @@ class ChronosAgent:
             f"Documentary title: {title}\n"
             f"Topic: {topic}\n"
             f"Beat {beat_index}/{beat_count} — {arc_label}\n"
-            f"Target duration: {beat.get('target_duration_seconds', 35)} seconds\n"
+            f"Target duration: {beat.get('target_duration_seconds', 15)} seconds\n"
             f"Visual cue: {beat.get('video_prompt', '')}\n\n"
             f"Narration (deliver word-for-word, with full dramatic pacing):\n"
             f"{beat.get('narration', '')}\n\n"
@@ -1422,10 +1383,10 @@ STYLE:
                                     "narration": f"Cinematic introduction to {topic}.",
                                     "video_prompt": f"Cinematic opening shot for {topic}",
                                     "image_prompt": f"Photorealistic documentary still of {topic}",
-                                    "target_duration_seconds": 35,
+                                    "target_duration_seconds": 15,
                                 }
                             ]
-                        target_beats = 8
+                        target_beats = 4
                         if len(beats) < target_beats:
                             fallback = self._build_story_beats(self._default_story_blueprint(topic))
                             source = fallback or beats
@@ -1436,7 +1397,7 @@ STYLE:
                                         "narration": template.get("narration", f"Explore {topic} further."),
                                         "video_prompt": template.get("video_prompt", f"Cinematic shot about {topic}"),
                                         "image_prompt": template.get("image_prompt", f"Photorealistic still of {topic}"),
-                                        "target_duration_seconds": template.get("target_duration_seconds", 35),
+                                        "target_duration_seconds": template.get("target_duration_seconds", 15),
                                     }
                                 )
                         if len(beats) > 10:
@@ -1525,7 +1486,7 @@ STYLE:
                                     "beat_index": beat_index,
                                     "total_beats": len(beats),
                                     "title": title,
-                                    "target_duration_seconds": beat.get("target_duration_seconds", 35),
+                                    "target_duration_seconds": beat.get("target_duration_seconds", 15),
                                 },
                             )
 
@@ -1538,8 +1499,13 @@ STYLE:
                                 user_name=user_name,
                             )
                             turn_complete_event.clear()
-                            await send_turn_input(beat_prompt)
-                            got_turn = await wait_for_turn_complete(timeout_seconds=120)
+                            try:
+                                await send_turn_input(beat_prompt)
+                            except Exception as send_err:
+                                print(f"Beat {beat_index + 1} session error: {send_err}")
+                                await self._send(websocket, {"type": "status", "content": f"[Studio] Session interrupted at beat {beat_index + 1} — ending documentary early."})
+                                break
+                            got_turn = await wait_for_turn_complete(timeout_seconds=30)
                             if not got_turn:
                                 await self._send(
                                     websocket,
@@ -1629,6 +1595,7 @@ STYLE:
                     except Exception as e:
                         print(f"Error in Gemini receive loop: {e}")
                         await self._send_error(websocket, f"Live stream receive error: {e}")
+                        turn_complete_event.set()  # Unblock any beat waiting for turn completion
 
                 receive_task = asyncio.create_task(receive_from_gemini())
 
