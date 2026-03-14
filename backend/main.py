@@ -119,18 +119,18 @@ class ChronosAgent:
         self.location = location
         self.video_output_gcs_uri = video_output_gcs_uri
         self.auth_mode = "express_api_key" if api_key and not project_id else "adc"
-        client_kwargs = {
-            "vertexai": True,
-            "http_options": {"api_version": "v1"},
-        }
-        if project_id:
-            os.environ.pop("GOOGLE_API_KEY", None)
-            os.environ.pop("GEMINI_API_KEY", None)
-            client_kwargs["project"] = project_id
-        if location and not api_key:
-            client_kwargs["location"] = location
-        if api_key:
+        client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1"}}
+        if api_key and not project_id:
+            # Gemini API key mode — vertexai=True is incompatible with api_key
             client_kwargs["api_key"] = api_key
+        else:
+            client_kwargs["vertexai"] = True
+            if project_id:
+                os.environ.pop("GOOGLE_API_KEY", None)
+                os.environ.pop("GEMINI_API_KEY", None)
+                client_kwargs["project"] = project_id
+            if location:
+                client_kwargs["location"] = location
 
         self.client = genai.Client(
             **client_kwargs,
