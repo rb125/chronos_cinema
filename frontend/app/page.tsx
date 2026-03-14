@@ -373,7 +373,8 @@ export default function ChronosCinema() {
         }
 
         case "bgm_fallback": {
-          setBgmActive(false);
+          await ensureAudio();
+          audioEngineRef.current?.playFallbackBgm();
           break;
         }
 
