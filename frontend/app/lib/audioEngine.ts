@@ -182,6 +182,23 @@ export class AudioEngine {
     );
   }
 
+  /**
+   * Immediately fade out any buffered narration (e.g. on user interruption).
+   * Resets the narration schedule so the next enqueueNarrationChunk plays right away.
+   */
+  stopNarration(): void {
+    if (!this.narrationGain || !this.ctx) return;
+    // Quick fade-out of whatever is still buffered
+    this.narrationGain.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.narrationGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+    // Reset the scheduler — new chunks will start from "now"
+    this.nextNarrationTime = this.ctx.currentTime + 0.3;
+    // Restore gain after the brief fade so next narration is audible
+    const restoreAt = this.ctx.currentTime + 0.5;
+    this.narrationGain.gain.setTargetAtTime(1.0, restoreAt, 0.1);
+    this.isNarrating = false;
+  }
+
   /** Set BGM volume directly (0-1). */
   setBgmVolume(vol: number): void {
     if (!this.bgmGain || !this.ctx) return;

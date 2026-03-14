@@ -420,7 +420,11 @@ export default function ChronosCinema() {
         }
 
         case "interrupted": {
-          addStatus(`[${msg.source as string}] Interruption detected`);
+          addStatus(`[${msg.source as string}] Interruption — listening…`);
+          // Stop buffered narration so Gemini's response plays cleanly
+          audioEngineRef.current?.stopNarration();
+          audioEngineRef.current?.restoreBgm();
+          setSubtitles([]);
           break;
         }
 
@@ -1068,18 +1072,34 @@ export default function ChronosCinema() {
                       <>🎙 Speak</>
                     )}
                   </button>
+                  <div className="flex items-center gap-0 w-48 sm:w-64">
                   <input
                     ref={chatInputRef}
                     type="text"
                     placeholder="Interrupt or ask…"
-                    className="w-44 sm:w-56 bg-cinema-card border border-cinema-border rounded-lg px-3 py-1.5 text-sm text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/40 transition-colors"
+                    className="flex-1 min-w-0 bg-cinema-card border border-cinema-border border-r-0 rounded-l-lg px-3 py-1.5 text-sm text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/40 transition-colors"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        sendChat((e.target as HTMLInputElement).value);
+                        const val = (e.target as HTMLInputElement).value;
+                        sendChat(val);
                         (e.target as HTMLInputElement).value = "";
                       }
                     }}
                   />
+                  <button
+                    onClick={() => {
+                      const val = chatInputRef.current?.value ?? "";
+                      if (val.trim()) {
+                        sendChat(val);
+                        if (chatInputRef.current) chatInputRef.current.value = "";
+                      }
+                    }}
+                    className="flex-shrink-0 px-2.5 py-1.5 bg-cinema-card border border-cinema-border rounded-r-lg text-cinema-muted hover:text-cinema-gold hover:border-cinema-gold/40 transition-all text-sm"
+                    title="Send (or press Enter)"
+                  >
+                    ↵
+                  </button>
+                  </div>
                 </>
               )}
 
