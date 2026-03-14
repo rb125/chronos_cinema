@@ -91,7 +91,6 @@ export default function ChronosCinema() {
   const [videoSize, setVideoSize] = useState<VideoSize>("default");
   const [showStatusLog, setShowStatusLog] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
-  const [ccEnabled, setCcEnabled] = useState(true);
 
   // History
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -99,20 +98,14 @@ export default function ChronosCinema() {
   // Quiz state
   const [quiz, setQuiz] = useState<QuizState | null>(null);
 
-  // Mic / voice
-  const [micEnabled, setMicEnabled] = useState(false);
-
   // Refs — connections
   const wsRef = useRef<WebSocket | null>(null);
   const audioEngineRef = useRef<AudioEngine | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Refs — DOM
   const subtitleScrollRef = useRef<HTMLDivElement>(null);
   const statusLogRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cinemaFrameRef = useRef<HTMLDivElement>(null);
@@ -423,15 +416,6 @@ export default function ChronosCinema() {
           break;
         }
 
-        case "interrupted": {
-          addStatus(`[${msg.source as string}] Interruption — listening…`);
-          // Stop buffered narration so Gemini's response plays cleanly
-          audioEngineRef.current?.stopNarration();
-          audioEngineRef.current?.restoreBgm();
-          setSubtitles([]);
-          break;
-        }
-
         case "error": {
           addStatus(`ERROR: ${msg.content as string}`);
           break;
@@ -673,9 +657,7 @@ export default function ChronosCinema() {
 
     audioEngineRef.current?.destroy();
     audioEngineRef.current = null;
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
 
-    setMicEnabled(false);
     setIsPaused(false);
     setIsReplaying(false);
     setPhase("idle");
@@ -695,46 +677,6 @@ export default function ChronosCinema() {
     }
   }, []);
 
-  // ── Mic recording ──
-  const toggleMic = useCallback(async () => {
-    if (micEnabled) {
-      mediaRecorderRef.current?.stop();
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-      mediaRecorderRef.current = null;
-      mediaStreamRef.current = null;
-      setMicEnabled(false);
-      wsRef.current?.send(JSON.stringify({ type: "user_audio_end" }));
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
-        });
-        mediaStreamRef.current = stream;
-        const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-        recorder.ondataavailable = async (e) => {
-          if (e.data.size === 0 || !wsRef.current) return;
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64 = (reader.result as string).split(",")[1];
-            wsRef.current?.send(JSON.stringify({ type: "user_audio", data: base64 }));
-          };
-          reader.readAsDataURL(e.data);
-        };
-        recorder.start(250);
-        mediaRecorderRef.current = recorder;
-        setMicEnabled(true);
-      } catch (err) {
-        addStatus(`Mic error: ${err}`);
-      }
-    }
-  }, [micEnabled, addStatus]);
-
-  // ── Chat ──
-  const sendChat = useCallback((text: string) => {
-    if (!text.trim() || !wsRef.current) return;
-    wsRef.current.send(JSON.stringify({ type: "user_chat", content: text.trim() }));
-  }, []);
-
   // ── Update <video> when visual changes ──
   useEffect(() => {
     if (!currentVisual || currentVisual.type !== "video" || !videoRef.current) return;
@@ -751,7 +693,6 @@ export default function ChronosCinema() {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       wsRef.current?.close();
       audioEngineRef.current?.destroy();
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
@@ -1025,24 +966,6 @@ export default function ChronosCinema() {
                 </button>
               </div>
 
-              {/* ── CC overlay — positioned above letterbox bar ── */}
-              {ccEnabled && subtitles.length > 0 && (
-                <div className="absolute bottom-[9%] left-0 right-0 z-[25] px-8 pointer-events-none">
-                  <div className="flex flex-col items-center gap-[3px]">
-                    {subtitles.slice(-2).map((line, i, arr) => (
-                      <span
-                        key={`${i}-${line.slice(0, 12)}`}
-                        className={`cc-line transition-opacity duration-300 ${
-                          i === arr.length - 1 ? "opacity-100" : "opacity-50"
-                        }`}
-                      >
-                        {line}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Pause overlay */}
               {isPaused && (
                 <button
@@ -1078,69 +1001,6 @@ export default function ChronosCinema() {
               </button>
 
               <div className="flex-1" />
-
-              {/* Mic + Chat — hidden during replay since no WS */}
-              {!isReplaying && (
-                <>
-                  <button
-                    onClick={toggleMic}
-                    className={`ctrl-btn ${
-                      micEnabled
-                        ? "bg-red-600 text-white hover:bg-red-700"
-                        : "bg-cinema-card border border-cinema-border text-cinema-text hover:border-cinema-gold/40"
-                    }`}
-                  >
-                    {micEnabled ? (
-                      <>
-                        <span className="w-1.5 h-1.5 bg-white rounded-full recording-dot" />
-                        Listening
-                      </>
-                    ) : (
-                      <>🎙 Speak</>
-                    )}
-                  </button>
-                  <div className="flex items-center gap-0 w-48 sm:w-64">
-                  <input
-                    ref={chatInputRef}
-                    type="text"
-                    placeholder="Interrupt or ask…"
-                    className="flex-1 min-w-0 bg-cinema-card border border-cinema-border border-r-0 rounded-l-lg px-3 py-1.5 text-sm text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/40 transition-colors"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const val = (e.target as HTMLInputElement).value;
-                        sendChat(val);
-                        (e.target as HTMLInputElement).value = "";
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const val = chatInputRef.current?.value ?? "";
-                      if (val.trim()) {
-                        sendChat(val);
-                        if (chatInputRef.current) chatInputRef.current.value = "";
-                      }
-                    }}
-                    className="flex-shrink-0 px-2.5 py-1.5 bg-cinema-card border border-cinema-border rounded-r-lg text-cinema-muted hover:text-cinema-gold hover:border-cinema-gold/40 transition-all text-sm"
-                    title="Send (or press Enter)"
-                  >
-                    ↵
-                  </button>
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={() => setCcEnabled((p) => !p)}
-                className={`ctrl-btn border ${
-                  ccEnabled
-                    ? "border-cinema-gold text-cinema-gold bg-cinema-gold/10"
-                    : "border-cinema-border text-cinema-muted"
-                }`}
-                title="Toggle closed captions"
-              >
-                CC
-              </button>
 
               <button
                 onClick={() => setShowStatusLog((p) => !p)}

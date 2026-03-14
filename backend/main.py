@@ -157,7 +157,7 @@ class ChronosAgent:
 
         self._storage_client: Optional["storage.Client"] = None
         self._video_guard = asyncio.Semaphore(self.video_render_concurrency)
-        self._image_guard = asyncio.Semaphore(2)
+        self._image_guard = asyncio.Semaphore(1)
 
         self.live_tools = [
             {
@@ -946,7 +946,16 @@ class ChronosAgent:
 
                         raise RuntimeError("Veo completed but no downloadable video bytes were found.")
                     except Exception as attempt_error:
-                        last_error = attempt_error
+                        error_str = str(attempt_error)
+                        # Code 3 = content policy violation — swap in a safe generic prompt and continue
+                        if "'code': 3" in error_str or '"code": 3' in error_str or "usage guidelines" in error_str:
+                            print(f"Veo attempt {attempt} prompt policy violation — using safe fallback prompt")
+                            config = genai.types.GenerateVideosConfig(number_of_videos=1)
+                            if self.video_output_gcs_uri:
+                                config.output_gcs_uri = self.video_output_gcs_uri
+                            prompt_candidates = ["Cinematic wide establishing shot, nature documentary style, no text."]
+                        else:
+                            last_error = attempt_error
                         print(f"Veo attempt {attempt} failed: {attempt_error}")
 
                 if last_error:
@@ -1006,55 +1015,61 @@ class ChronosAgent:
         status_prefix: str = "[Image Agent]",
     ) -> Optional[Dict[str, Any]]:
         async with self._image_guard:
-            try:
-                await self._send(
-                    websocket,
-                    {"type": "status", "content": f"{status_prefix} Generating storyboard frame: {prompt[:70]}..."},
-                )
-                response = await asyncio.to_thread(
-                    self.client.models.generate_images,
-                    model=self.image_model,
-                    prompt=prompt,
-                    config=genai.types.GenerateImagesConfig(number_of_images=1),
-                )
-
-                generated_images = getattr(response, "generated_images", None) or []
-                if not generated_images:
-                    raise RuntimeError("Imagen returned no images.")
-
-                for generated_image in generated_images:
-                    image_obj = getattr(generated_image, "image", None)
-                    image_bytes = await self._get_image_bytes(generated_image)
-                    if not image_bytes:
-                        continue
-                    return {
-                        "type": "image",
-                        "data": base64.b64encode(image_bytes).decode("utf-8"),
-                        "mime_type": getattr(image_obj, "mime_type", None) or "image/png",
-                        "uri": getattr(image_obj, "gcs_uri", None),
-                    }
-
-                raise RuntimeError("Imagen completed but no renderable image bytes were found.")
-            except Exception as e:
-                print(f"Image generation error: {e}")
-                error_text = str(e)
-                if "RESOURCE_EXHAUSTED" in error_text or "429" in error_text:
+            max_attempts = 4
+            for attempt in range(max_attempts):
+                try:
                     await self._send(
                         websocket,
-                        {
-                            "type": "status",
-                            "content": f"{status_prefix} Quota reached. Reusing current visual.",
-                        },
+                        {"type": "status", "content": f"{status_prefix} Generating storyboard frame: {prompt[:70]}..."},
                     )
+                    response = await asyncio.to_thread(
+                        self.client.models.generate_images,
+                        model=self.image_model,
+                        prompt=prompt,
+                        config=genai.types.GenerateImagesConfig(number_of_images=1),
+                    )
+
+                    generated_images = getattr(response, "generated_images", None) or []
+                    if not generated_images:
+                        raise RuntimeError("Imagen returned no images.")
+
+                    for generated_image in generated_images:
+                        image_obj = getattr(generated_image, "image", None)
+                        image_bytes = await self._get_image_bytes(generated_image)
+                        if not image_bytes:
+                            continue
+                        return {
+                            "type": "image",
+                            "data": base64.b64encode(image_bytes).decode("utf-8"),
+                            "mime_type": getattr(image_obj, "mime_type", None) or "image/png",
+                            "uri": getattr(image_obj, "gcs_uri", None),
+                        }
+
+                    raise RuntimeError("Imagen completed but no renderable image bytes were found.")
+                except Exception as e:
+                    error_text = str(e)
+                    is_quota = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
+                    print(f"Image generation error (attempt {attempt + 1}/{max_attempts}): {e}")
+                    if is_quota and attempt < max_attempts - 1:
+                        wait_secs = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                        await self._send(
+                            websocket,
+                            {"type": "status", "content": f"{status_prefix} Quota limit hit — retrying in {wait_secs}s (attempt {attempt + 2}/{max_attempts})..."},
+                        )
+                        await asyncio.sleep(wait_secs)
+                        continue
+                    if is_quota:
+                        await self._send(
+                            websocket,
+                            {"type": "status", "content": f"{status_prefix} Quota exhausted after {max_attempts} attempts. Reusing current visual."},
+                        )
+                    else:
+                        await self._send(
+                            websocket,
+                            {"type": "status", "content": f"{status_prefix} Generation failed. Keeping current visual."},
+                        )
                     return None
-                await self._send(
-                    websocket,
-                    {
-                        "type": "status",
-                        "content": f"{status_prefix} Generation failed. Keeping current visual.",
-                    },
-                )
-                return None
+            return None
 
     async def _send_image_payload(
         self,
@@ -1301,10 +1316,6 @@ INTERLEAVING RULES:
 - Use tool calls only when the user explicitly requests a visual/music change.
 - Never read tool names/prompts aloud.
 
-INTERRUPTIONS:
-- If user interrupts by voice or chat, stop current thread immediately.
-- Respond to interruption first, then continue from the new direction.
-
 STYLE:
 - Documentary tone, vivid but concise.
 - Prioritize clarity, momentum, and educational value.
@@ -1317,12 +1328,6 @@ STYLE:
                     "prebuilt_voice_config": {"voice_name": "Aoede"},
                 },
             },
-            "realtime_input_config": {
-                "activity_handling": "START_OF_ACTIVITY_INTERRUPTS",
-                "turn_coverage": "TURN_INCLUDES_ONLY_ACTIVITY",
-                "automatic_activity_detection": {"disabled": False},
-            },
-            "input_audio_transcription": {},
             "output_audio_transcription": {},
             "tools": self.live_tools,
         }
@@ -1347,60 +1352,15 @@ STYLE:
                 active_tasks: Set[asyncio.Task] = set()
                 seen_call_ids: Set[str] = set()
                 output_transcript_state = ""
-                voice_turn_transcript = ""
-                last_processed_voice_transcript = ""
-                last_processed_voice_transcript_at = 0.0
-                audio_input_enabled = True
-                audio_input_error_reported = False
                 current_topic = ""
                 current_user_name = ""
-                last_visual_request_signature = ""
-                last_visual_request_at = 0.0
                 story_task: Optional[asyncio.Task] = None
                 turn_complete_event = asyncio.Event()
-                interrupt_event = asyncio.Event()
                 session_send_lock = asyncio.Lock()
 
                 async def send_turn_input(input_text: str):
                     async with session_send_lock:
                         await session.send(input=input_text, end_of_turn=True)
-
-                async def send_realtime_audio(audio_data: bytes):
-                    async with session_send_lock:
-                        await session.send_realtime_input(
-                            audio=genai.types.Blob(
-                                data=audio_data,
-                                mime_type="audio/pcm;rate=16000",
-                            )
-                        )
-
-                async def end_realtime_audio():
-                    async with session_send_lock:
-                        await session.send_realtime_input(audio_stream_end=True)
-
-                async def mark_visual_request(user_text: str, source: str):
-                    nonlocal last_visual_request_signature, last_visual_request_at
-                    cleaned = " ".join(user_text.lower().split())
-                    now = asyncio.get_running_loop().time()
-                    if not cleaned:
-                        return
-                    if cleaned == last_visual_request_signature and now - last_visual_request_at < 2.5:
-                        return
-                    last_visual_request_signature = cleaned
-                    last_visual_request_at = now
-
-                    topic_context = current_topic or "the current documentary topic"
-                    normalized_prompt = self._normalize_visual_request_prompt(user_text, topic_context)
-                    await self._send(websocket, {"type": "interrupted", "source": source})
-                    await self._send(
-                        websocket,
-                        {"type": "status", "content": f"[Delegator] Reframing shot request: {user_text}"},
-                    )
-                    self._spawn_task(
-                        active_tasks,
-                        self.generate_video_scene(normalized_prompt, websocket),
-                        "video-interrupt",
-                    )
 
                 async def wait_for_turn_complete(timeout_seconds: int = 90) -> bool:
                     try:
@@ -1541,9 +1501,6 @@ STYLE:
 
                         # ── Phase 3: Sequential narration — each beat waits briefly for its image ──
                         for beat_index, beat in enumerate(beats):
-                            if interrupt_event.is_set():
-                                interrupt_event.clear()
-
                             # Ensure this beat's image is ready before the narrator speaks.
                             # For beat 0: already handled above.
                             # For beats 1+: image was generating during previous beat's narration (~35s),
@@ -1622,8 +1579,7 @@ STYLE:
                         await self._send_error(websocket, f"Story generation error: {story_error}")
 
                 async def receive_from_gemini():
-                    nonlocal output_transcript_state, voice_turn_transcript
-                    nonlocal last_processed_voice_transcript, last_processed_voice_transcript_at
+                    nonlocal output_transcript_state
                     try:
                         async for message in session.receive():
                             tool_call = getattr(message, "tool_call", None)
@@ -1642,10 +1598,6 @@ STYLE:
                             if not server_content:
                                 continue
 
-                            if server_content.interrupted:
-                                interrupt_event.set()
-                                await self._send(websocket, {"type": "interrupted", "source": "voice"})
-
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     inline_data = getattr(part, "inline_data", None)
@@ -1661,24 +1613,6 @@ STYLE:
                                     if text_part and text_part.strip():
                                         await self._send(websocket, {"type": "narration", "content": text_part})
 
-                            input_transcript_text = self._extract_input_transcript_text(server_content)
-                            if input_transcript_text:
-                                voice_turn_transcript = input_transcript_text
-                                normalized_live_transcript = " ".join(input_transcript_text.lower().split())
-                                now = asyncio.get_running_loop().time()
-                                if (
-                                    normalized_live_transcript
-                                    and self._is_visual_request(input_transcript_text)
-                                    and (
-                                        normalized_live_transcript != last_processed_voice_transcript
-                                        or now - last_processed_voice_transcript_at > 3.0
-                                    )
-                                ):
-                                    last_processed_voice_transcript = normalized_live_transcript
-                                    last_processed_voice_transcript_at = now
-                                    interrupt_event.set()
-                                    await mark_visual_request(input_transcript_text, "voice")
-
                             output_transcription = getattr(server_content, "output_transcription", None)
                             transcript_text = getattr(output_transcription, "text", None) if output_transcription else None
                             if transcript_text:
@@ -1692,22 +1626,6 @@ STYLE:
                             if server_content.turn_complete:
                                 turn_complete_event.set()
                                 output_transcript_state = ""
-                                transcript = voice_turn_transcript.strip()
-                                voice_turn_transcript = ""
-                                normalized_transcript = " ".join(transcript.lower().split())
-                                now = asyncio.get_running_loop().time()
-                                if (
-                                    normalized_transcript
-                                    and (
-                                        normalized_transcript != last_processed_voice_transcript
-                                        or now - last_processed_voice_transcript_at > 3.0
-                                    )
-                                ):
-                                    last_processed_voice_transcript = normalized_transcript
-                                    last_processed_voice_transcript_at = now
-                                    if self._is_visual_request(transcript):
-                                        interrupt_event.set()
-                                        await mark_visual_request(transcript, "voice")
                     except Exception as e:
                         print(f"Error in Gemini receive loop: {e}")
                         await self._send_error(websocket, f"Live stream receive error: {e}")
@@ -1747,78 +1665,13 @@ STYLE:
                                 with suppress(asyncio.CancelledError):
                                     await story_task
 
-                            interrupt_event.clear()
                             turn_complete_event.clear()
                             story_task = self._spawn_task(
                                 active_tasks,
                                 run_story(topic, user_name),
                                 "story",
                             )
-                        elif msg_type == "user_chat":
-                            user_text = str(msg.get("content", "")).strip()
-                            if not user_text:
-                                continue
-
-                            interrupt_event.set()
-                            await self._send(websocket, {"type": "interrupted", "source": "chat"})
-                            await self._send(websocket, {"type": "status", "content": "Chat interruption received."})
-                            if self._is_visual_request(user_text):
-                                await mark_visual_request(user_text, "chat")
-                            await send_turn_input(user_text)
-                        elif msg_type == "user_audio":
-                            if not audio_input_enabled:
-                                continue
-                            try:
-                                audio_data = base64.b64decode(msg.get("data", ""))
-                                if audio_data:
-                                    await send_realtime_audio(audio_data)
-                            except Exception as e:
-                                error_text = str(e)
-                                lowered = error_text.lower()
-                                print(f"Error sending audio to Gemini: {error_text}")
-                                if (
-                                    "invalid frame payload data" in lowered
-                                    or "keepalive ping timeout" in lowered
-                                    or "no close frame received" in lowered
-                                    or "1011" in lowered
-                                ):
-                                    audio_input_enabled = False
-                                    if not audio_input_error_reported:
-                                        audio_input_error_reported = True
-                                        hint = (
-                                            "Mic stream rejected by Live API (need 16kHz s16le mono). "
-                                            "Voice input paused; toggle Mic Off/On to retry."
-                                            if "invalid frame payload data" in lowered
-                                            else "Live voice channel timed out. Voice input paused; toggle Mic Off/On to retry."
-                                        )
-                                        await self._send(
-                                            websocket,
-                                            {"type": "status", "content": hint},
-                                        )
-                                else:
-                                    await self._send_error(websocket, f"Audio send error: {e}")
-                        elif msg_type == "ping":
-                            await self._send(websocket, {"type": "pong"})
-                        elif msg_type == "user_audio_end":
-                            try:
-                                await end_realtime_audio()
-                                audio_input_enabled = True
-                                audio_input_error_reported = False
-                            except Exception as e:
-                                error_text = str(e)
-                                print(f"Error ending audio stream: {error_text}")
-                                if not audio_input_error_reported:
-                                    audio_input_error_reported = True
-                                    await self._send(
-                                        websocket,
-                                        {
-                                            "type": "status",
-                                            "content": "Voice channel is unstable right now. Chat interruption remains available.",
-                                        },
-                                    )
-                                audio_input_enabled = False
-                        else:
-                            await self._send_error(websocket, f"Unsupported message type: {msg_type}")
+                        # ping — keep-alive from the browser heartbeat, no-op
                 except WebSocketDisconnect:
                     print("Client disconnected")
                 finally:
