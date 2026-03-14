@@ -88,6 +88,7 @@ export default function ChronosCinema() {
   const [videoSize, setVideoSize] = useState<VideoSize>("default");
   const [showStatusLog, setShowStatusLog] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
+  const [ccEnabled, setCcEnabled] = useState(true);
 
   // History
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -1016,6 +1017,24 @@ export default function ChronosCinema() {
                 </button>
               </div>
 
+              {/* ── CC overlay — positioned above letterbox bar ── */}
+              {ccEnabled && subtitles.length > 0 && (
+                <div className="absolute bottom-[9%] left-0 right-0 z-[25] px-8 pointer-events-none">
+                  <div className="flex flex-col items-center gap-[3px]">
+                    {subtitles.slice(-2).map((line, i, arr) => (
+                      <span
+                        key={`${i}-${line.slice(0, 12)}`}
+                        className={`cc-line transition-opacity duration-300 ${
+                          i === arr.length - 1 ? "opacity-100" : "opacity-50"
+                        }`}
+                      >
+                        {line}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Pause overlay */}
               {isPaused && (
                 <button
@@ -1104,31 +1123,24 @@ export default function ChronosCinema() {
               )}
 
               <button
+                onClick={() => setCcEnabled((p) => !p)}
+                className={`ctrl-btn border ${
+                  ccEnabled
+                    ? "border-cinema-gold text-cinema-gold bg-cinema-gold/10"
+                    : "border-cinema-border text-cinema-muted"
+                }`}
+                title="Toggle closed captions"
+              >
+                CC
+              </button>
+
+              <button
                 onClick={() => setShowStatusLog((p) => !p)}
                 className="ctrl-btn bg-cinema-card border border-cinema-border text-cinema-muted hover:border-cinema-gold/30 hover:text-cinema-text"
               >
                 {showStatusLog ? "Hide Log" : "Log"}
               </button>
             </div>
-          </div>
-
-          {/* Subtitles */}
-          <div
-            ref={subtitleScrollRef}
-            className={`mt-2 px-4 min-h-[4rem] max-h-[4.5rem] overflow-hidden flex flex-col justify-end ${
-              videoSize === "default" ? "max-w-5xl mx-auto w-full" : ""
-            }`}
-          >
-            {subtitles.slice(-3).map((line, i, arr) => (
-              <p
-                key={i}
-                className={`subtitle-text text-center transition-opacity duration-300 ${
-                  i === arr.length - 1 ? "text-white" : "text-cinema-muted/60"
-                }`}
-              >
-                {line}
-              </p>
-            ))}
           </div>
 
           {/* Collapsible status log */}
