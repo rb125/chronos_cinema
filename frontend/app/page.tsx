@@ -301,19 +301,7 @@ export default function ChronosCinema() {
         }
 
         case "beat_end": {
-          // Defer BGM restore until narration audio finishes playing.
-          // beat_end arrives when the backend is done sending chunks, but
-          // those chunks may still be buffered in the Web Audio graph.
-          (async () => {
-            const engine = audioEngineRef.current;
-            if (engine) {
-              const deadline = Date.now() + 12_000;
-              while (engine.isNarrationActive() && Date.now() < deadline) {
-                await new Promise((r) => setTimeout(r, 100));
-              }
-              engine.restoreBgm();
-            }
-          })();
+          audioEngineRef.current?.restoreBgm();
           const beat = msg.beat_index as number ?? currentBeatRef.current;
           const bd = accRef.current.beatData[beat];
           if (bd) bd.durationSeconds = (Date.now() - bd.startMs) / 1000;
