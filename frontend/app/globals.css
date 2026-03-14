@@ -26,7 +26,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Cinema letterbox effect */
+/* ── Cinema frame ─────────────────────────────────────────────────────────── */
 .cinema-frame {
   position: relative;
   width: 100%;
@@ -41,48 +41,52 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  height: 8%;
+  height: 7%;
   background: #000;
   z-index: 10;
   pointer-events: none;
 }
 
-.cinema-frame::before {
-  top: 0;
+.cinema-frame::before { top: 0; }
+.cinema-frame::after  { bottom: 0; }
+
+/* Theater mode: no rounded corners, no letterbox bars */
+.cinema-frame.theater {
+  border-radius: 0 !important;
+}
+.cinema-frame.theater::before,
+.cinema-frame.theater::after {
+  display: none;
 }
 
-.cinema-frame::after {
-  bottom: 0;
-}
-
-/* Subtitle rendering */
+/* ── Subtitle ─────────────────────────────────────────────────────────────── */
 .subtitle-text {
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
-  font-size: clamp(0.85rem, 2vw, 1.15rem);
-  line-height: 1.5;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,0.8);
+  font-size: clamp(0.85rem, 2vw, 1.1rem);
+  line-height: 1.6;
   letter-spacing: 0.01em;
 }
 
-/* Beat progress bar */
+/* ── Beat progress segment ────────────────────────────────────────────────── */
 .beat-segment {
-  transition: all 0.3s ease;
+  transition: all 0.4s ease;
 }
 
-/* Quiz option hover */
+/* ── Quiz options ─────────────────────────────────────────────────────────── */
 .quiz-option {
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
   cursor: pointer;
 }
 
 .quiz-option:hover:not(.answered) {
   border-color: var(--gold);
-  background: rgba(201, 168, 76, 0.08);
-  transform: translateX(4px);
+  background: rgba(201, 168, 76, 0.07);
+  transform: translateX(3px);
 }
 
 .quiz-option.correct {
   border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.12);
+  background: rgba(34, 197, 94, 0.10);
 }
 
 .quiz-option.wrong {
@@ -90,77 +94,72 @@ body {
   background: rgba(239, 68, 68, 0.08);
 }
 
-/* Scanline effect for cinematic feel */
-.scanlines {
+/* ── Scanlines (cinematic grain) ─────────────────────────────────────────── */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: repeating-linear-gradient(
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
+    rgba(0, 0, 0, 0.025) 2px,
+    rgba(0, 0, 0, 0.025) 4px
   );
   pointer-events: none;
+  z-index: 5;
 }
 
-/* Vignette overlay */
+/* ── Vignette ─────────────────────────────────────────────────────────────── */
 .vignette {
   background: radial-gradient(
     ellipse at center,
-    transparent 60%,
-    rgba(0, 0, 0, 0.6) 100%
+    transparent 55%,
+    rgba(0, 0, 0, 0.65) 100%
   );
   pointer-events: none;
 }
 
-/* Audio waveform animation */
-@keyframes wave1 {
-  0%, 100% { height: 4px; }
-  50% { height: 16px; }
-}
-@keyframes wave2 {
-  0%, 100% { height: 8px; }
-  50% { height: 20px; }
-}
-@keyframes wave3 {
-  0%, 100% { height: 6px; }
-  50% { height: 14px; }
-}
+/* ── Audio waveform bars ─────────────────────────────────────────────────── */
+@keyframes wave1 { 0%, 100% { height: 3px; } 50% { height: 14px; } }
+@keyframes wave2 { 0%, 100% { height: 7px; } 50% { height: 18px; } }
+@keyframes wave3 { 0%, 100% { height: 5px; } 50% { height: 12px; } }
 
-.wave-bar:nth-child(1) { animation: wave1 0.6s ease-in-out infinite; }
-.wave-bar:nth-child(2) { animation: wave2 0.6s ease-in-out infinite 0.1s; }
-.wave-bar:nth-child(3) { animation: wave3 0.6s ease-in-out infinite 0.2s; }
-.wave-bar:nth-child(4) { animation: wave2 0.6s ease-in-out infinite 0.3s; }
-.wave-bar:nth-child(5) { animation: wave1 0.6s ease-in-out infinite 0.15s; }
+.wave-bar:nth-child(1) { animation: wave1 0.65s ease-in-out infinite; }
+.wave-bar:nth-child(2) { animation: wave2 0.65s ease-in-out infinite 0.08s; }
+.wave-bar:nth-child(3) { animation: wave3 0.65s ease-in-out infinite 0.18s; }
+.wave-bar:nth-child(4) { animation: wave2 0.65s ease-in-out infinite 0.28s; }
+.wave-bar:nth-child(5) { animation: wave1 0.65s ease-in-out infinite 0.12s; }
 
-/* Scroll for status log */
+/* ── Status / console log ────────────────────────────────────────────────── */
 .status-log {
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: #2a2a2a transparent;
 }
 
-.status-log::-webkit-scrollbar {
-  width: 3px;
-}
-
+.status-log::-webkit-scrollbar { width: 3px; }
 .status-log::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #2a2a2a;
   border-radius: 2px;
 }
 
-/* Gold gradient text */
+/* ── Gold gradient text ──────────────────────────────────────────────────── */
 .text-gold-gradient {
-  background: linear-gradient(135deg, #c9a84c 0%, #e8c96a 50%, #c9a84c 100%);
+  background: linear-gradient(135deg, #b8922e 0%, #e8c96a 45%, #c9a84c 75%, #e8c96a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Smooth video/image transitions */
-.visual-transition {
-  transition: opacity 0.6s ease-in-out;
+/* ── Glass panel ─────────────────────────────────────────────────────────── */
+.glass {
+  background: rgba(26, 26, 26, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
-/* Ken Burns cinematic pan-zoom animations for static images */
+/* ── Ken Burns cinematic pan-zoom ────────────────────────────────────────── */
 @keyframes kenBurns0 {
   0%   { transform: scale(1.00) translate(0%, 0%); }
   100% { transform: scale(1.10) translate(-3%, -2%); }
@@ -203,11 +202,61 @@ body {
 .ken-burns-6 { animation: kenBurns6 var(--kb-duration, 38s) ease-in-out forwards; }
 .ken-burns-7 { animation: kenBurns7 var(--kb-duration, 38s) ease-in-out forwards; }
 
-/* Pulsing recording indicator */
+/* ── Pulsing recording dot ───────────────────────────────────────────────── */
 @keyframes record-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50% { opacity: 0.25; }
 }
 .recording-dot {
   animation: record-pulse 1.2s ease-in-out infinite;
+}
+
+/* ── Shimmer loading effect ──────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
+/* ── History card glow on hover ──────────────────────────────────────────── */
+.history-card:hover {
+  box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.25), 0 2px 12px rgba(0,0,0,0.4);
+}
+
+/* ── Glow ring on active/live indicator ──────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(201, 168, 76, 0.4); }
+  50%       { box-shadow: 0 0 8px 3px rgba(201, 168, 76, 0.15); }
+}
+.glow-ring {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ── Idle background grain ───────────────────────────────────────────────── */
+.idle-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,168,76,0.07) 0%, transparent 70%),
+    #0a0a0a;
+}
+
+/* ── Smooth visual transitions ────────────────────────────────────────────── */
+.visual-fade {
+  transition: opacity 0.5s ease-in-out;
+}
+
+/* ── Control bar button base ─────────────────────────────────────────────── */
+.ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
