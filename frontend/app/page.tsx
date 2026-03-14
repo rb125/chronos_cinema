@@ -799,7 +799,7 @@ export default function ChronosCinema() {
           onClick={() => (phase !== "idle" ? stopPlayback() : undefined)}
           className="flex items-center gap-3 group"
         >
-          <span className="text-cinema-gold font-bold tracking-widest text-xs uppercase group-hover:text-cinema-gold-light transition-colors">
+          <span className="font-display font-semibold tracking-widest text-xs uppercase text-gold-gradient">
             ◈ CHRONOS CINEMA
           </span>
           {docTitle && phase !== "idle" && (
@@ -1037,7 +1037,7 @@ export default function ChronosCinema() {
                 onClick={togglePause}
                 className={`ctrl-btn ${
                   isPaused
-                    ? "bg-cinema-gold text-cinema-black hover:bg-cinema-gold-light"
+                    ? "bg-cinema-gold text-white hover:bg-cinema-gold-light"
                     : "bg-cinema-card border border-cinema-border text-cinema-text hover:border-cinema-gold/40"
                 }`}
               >
@@ -1198,7 +1198,7 @@ function IdleView({
 
         {/* Hero */}
         <div className="text-center mb-10">
-          <h1 className="text-[2.75rem] font-bold text-gold-gradient tracking-tight leading-tight mb-3">
+          <h1 className="text-[2.75rem] font-display font-bold text-gold-gradient tracking-tight leading-tight mb-3">
             Chronos Cinema
           </h1>
           <p className="text-cinema-muted text-[0.95rem] leading-relaxed max-w-sm mx-auto">
@@ -1245,9 +1245,7 @@ function IdleView({
           <button
             onClick={onStart}
             disabled={!topic.trim()}
-            className="w-full py-3 rounded-xl font-semibold text-[0.9375rem] tracking-wide transition-all duration-200
-              bg-cinema-gold text-cinema-black hover:bg-cinema-gold-light
-              disabled:opacity-35 disabled:cursor-not-allowed active:scale-[0.98]"
+            className="w-full py-3 rounded-xl font-semibold text-[0.9375rem] tracking-wide btn-produce"
           >
             ▶ Produce My Documentary
           </button>
@@ -1450,7 +1448,7 @@ function QuizView({
         {showExplanation && (
           <button
             onClick={isLast ? onFinish : onNext}
-            className="w-full py-3.5 rounded-xl font-semibold bg-cinema-gold text-cinema-black hover:bg-cinema-gold-light transition-colors"
+            className="w-full py-3.5 rounded-xl font-semibold btn-produce"
           >
             {isLast ? "See Final Score →" : "Next Question →"}
           </button>
