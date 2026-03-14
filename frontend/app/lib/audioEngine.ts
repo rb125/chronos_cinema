@@ -46,6 +46,17 @@ export class AudioEngine {
     }
   }
 
+  /** Suspend AudioContext (pause all audio). */
+  async suspend(): Promise<void> {
+    if (this.ctx?.state === "running") {
+      await this.ctx.suspend();
+    }
+  }
+
+  get isPaused(): boolean {
+    return this.ctx?.state === "suspended";
+  }
+
   /**
    * Enqueue a base64-encoded PCM chunk (Int16, 24kHz, mono) for gapless playback.
    * Each chunk is scheduled right after the previous one ends.
