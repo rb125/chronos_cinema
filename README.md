@@ -1,128 +1,172 @@
-# Chronos Cinema (Vertex AI Edition)
+# Chronos Cinema — AI Documentary Studio
 
-Chronos Cinema is a **Creative Storyteller** agent built for Gemini hackathon requirements: it streams narration with **Gemini Live API** while interleaving generated **video + audio** in one cohesive flow.
+An AI agent that produces cinematic, multimodal educational documentaries on any topic. Enter a subject and watch a live director, narrator, cinematographer, and composer collaborate in real time to generate a fully synchronized documentary — narration, video, images, and music as one cohesive unit.
 
-## What It Does
-- Runs a live Gemini delegator session with **native audio** output (`gemini-live-2.5-flash-native-audio`).
-- Uses Live **function-calling** to interleave worker outputs (video/music) during narration.
-- Triggers Veo generation from tool calls and streams cinematic shots to the frontend in real time.
-- Supports interruption by **voice** and **chat** (barge-in behavior).
-- Generates/updates background score via Lyria with fallback ambient track.
+**Hackathon category:** Creative Storyteller — multimodal interleaved output
 
-## Mandatory Tech Coverage
-- Gemini model: `gemini-live-2.5-flash-native-audio` (delegator), plus Gemini text/video/music workers.
-- SDK: **Google GenAI SDK** (Python).
-- Google Cloud service(s): **Vertex AI** (required), optional Cloud Storage output path for Veo, deployable on **Cloud Run**.
+---
 
-## Architecture
-See [docs/architecture.md](/home/rahul/hackathons/gemini_cinema/docs/architecture.md).
+## How It Works
 
-## Hackathon Submission Draft
-See [docs/hackathon_submission.md](/home/rahul/hackathons/gemini_cinema/docs/hackathon_submission.md) for a ready-to-edit submission package.
+1. **Script** — Gemini 2.5 Flash writes an 8-beat documentary arc (Hook → Foundation → Mechanism → Scale → Counterintuitive → Human Connection → Frontier → Reflection), ~200 words per beat.
+2. **Images** — Imagen 4.0 Fast pre-renders all 8 scene stills in parallel (~10-15s each). Narration is held until the first frame is ready — the narrator never speaks to a black screen.
+3. **Narration** — Gemini Live streams native audio beat-by-beat. Each beat starts only after its image is on screen. Ken Burns pan-zoom animations make stills feel cinematic.
+4. **Video upgrade** — Veo 3.1 generates full cinematic clips in the background (60-180s). When each clip is ready it silently replaces its scene's still image.
+5. **Music** — Lyria composes a custom background score. A fallback ambient track plays immediately while Lyria renders. BGM auto-ducks during narration and restores between beats.
+6. **Quiz** — After the documentary, Gemini generates 5 multiple-choice questions from the script. Interactive quiz with scoring and per-question explanations.
+7. **Interruptions** — Voice (mic) and chat can interrupt the narrator at any time.
 
-## Local Setup
+---
 
-### 1. Prerequisites
+## Tech Stack
+
+| Component | Model / Service |
+|-----------|----------------|
+| Narration (live audio) | `gemini-live-2.5-flash-native-audio` |
+| Script generation | `gemini-2.5-flash` |
+| Quiz generation | `gemini-2.5-flash` |
+| Video generation | `veo-3.1-generate-001` |
+| Image generation | `imagen-4.0-fast-generate-001` |
+| Music generation | `lyria-002` |
+| Cloud platform | Vertex AI + Cloud Run + Cloud Storage |
+| Backend | FastAPI + Python, WebSocket streaming |
+| Frontend | Next.js 14, Tailwind CSS, Web Audio API |
+
+---
+
+## Prerequisites
+
 - Python 3.10+
 - Node.js 18+
-- `gcloud` CLI
-- A Google Cloud project with billing enabled
+- A Google Cloud project with Vertex AI enabled and billing active
+- `gcloud` CLI (for ADC auth and deployment)
 
-### 2. Enable Cloud APIs
+---
+
+## Quick Start (Local)
+
+### 1. Enable Cloud APIs
+
 ```bash
-gcloud services enable aiplatform.googleapis.com run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com storage.googleapis.com
+gcloud services enable aiplatform.googleapis.com \
+  run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com storage.googleapis.com
 ```
 
-### 3. Authenticate for Vertex AI (ADC)
+### 2. Authenticate
+
 ```bash
 gcloud auth application-default login
-gcloud auth application-default set-quota-project "$GOOGLE_CLOUD_PROJECT"
-```
-This is required for `VERTEX_AUTH_MODE=project`.
-For local key-only testing, use `VERTEX_AUTH_MODE=api_key` and skip ADC.
-For full Live interleaving (audio + interrupts + multimodal workers), use project mode.
-
-### 4. Backend setup
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 ```
 
-Create `backend/.env`:
+### 3. Configure environment
+
+Edit `backend/.env` (already present in repo, update with your values):
+
 ```bash
-# Vertex auth mode: auto|project|api_key
 VERTEX_AUTH_MODE=project
-
-# Option A: full Vertex project mode (recommended)
 GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
 
-# Option B: API-key mode (Express-style local testing)
-# GOOGLE_CLOUD_API_KEY=your-vertex-api-key
-
-# Optional but recommended for Veo output artifacts:
+# Required for Veo to write output artifacts:
 VEO_OUTPUT_GCS_URI=gs://your-bucket/chronos-veo-output
-VIDEO_ONLY_MODE=true
 
-# Optional model overrides:
+# Optional — override default models:
 # GEMINI_LIVE_MODEL=gemini-live-2.5-flash-native-audio
 # GEMINI_SCRIPT_MODEL=gemini-2.5-flash
 # GEMINI_VIDEO_MODEL=veo-3.1-generate-001
 # GEMINI_IMAGE_MODEL=imagen-4.0-fast-generate-001
-# GEMINI_TEXT_MODEL=gemini-2.5-flash
 # GEMINI_MUSIC_MODEL=lyria-002
 ```
-Or copy [backend/.env.example](/home/rahul/hackathons/gemini_cinema/backend/.env.example).
 
-If you use **API-key mode only**, set `VERTEX_AUTH_MODE=api_key`.
-In that mode, project vars are ignored.
-For full multimodal reliability (especially Live interleaving + Veo + GCS artifact downloads), use `VERTEX_AUTH_MODE=project` + ADC.
-
-Run backend:
+**API-key mode** (no ADC, limited features — no Lyria, no GCS):
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+VERTEX_AUTH_MODE=api_key
+GOOGLE_API_KEY=your-api-key
+```
+
+### 4. Backend setup
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ### 5. Frontend setup
+
 ```bash
 cd frontend
 npm install
 ```
 
-Create `frontend/.env.local`:
-```bash
-NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:8000/ws
-```
-Or copy [frontend/.env.local.example](/home/rahul/hackathons/gemini_cinema/frontend/.env.local.example).
+The frontend connects to `ws://localhost:8000/ws` by default. To use a different backend URL:
 
-Run frontend:
 ```bash
+# frontend/.env.local
+NEXT_PUBLIC_WS_URL=ws://your-backend-host/ws
+```
+
+### 6. Run both services
+
+**Option A — single command:**
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+**Option B — separately (two terminals):**
+
+Terminal 1 — backend:
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000 \
+  --ws websockets-sansio --ws-ping-interval 60 --ws-ping-timeout 60
+```
+
+Terminal 2 — frontend:
+```bash
+cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open **http://localhost:3000**.
 
-## Cloud Run Deployment (Automated Script)
+---
 
-Use the deployment helper script:
+## What to Expect
+
+| Time | What happens |
+|------|-------------|
+| 0s | You enter a topic and click "Produce My Documentary" |
+| ~5-10s | Script generated, all image and video renders start simultaneously |
+| ~15-25s | First scene image ready → narrator begins (you see the scene, then hear the voice) |
+| ~30-60s | Subsequent scene images arrive (pre-rendered while previous beat plays) |
+| ~60-180s | Veo cinematic clips start arriving and silently upgrade each scene |
+| Ongoing | BGM plays under narration; auto-ducks when narrator speaks |
+| After narration | 5-question quiz generated from the documentary content |
+
+---
+
+## Cloud Run Deployment
+
 ```bash
-export GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=us-central1
 export VEO_OUTPUT_GCS_URI=gs://your-bucket/chronos-veo-output
 ./deploy_cloud_run.sh
 ```
 
-This deploys backend from `backend/` to Cloud Run and injects Vertex env vars.
+Then set `NEXT_PUBLIC_WS_URL=wss://your-cloud-run-url/ws` in your frontend environment.
 
-## Reproducibility Checklist (for Judges)
-- Backend startup instructions: this README (`Local Setup` + `Cloud Run Deployment`).
-- Proof of Google Cloud usage:
-  - [backend/main.py](/home/rahul/hackathons/gemini_cinema/backend/main.py) uses `genai.Client(vertexai=True, ...)` against Vertex AI (project/ADC or API-key mode).
-  - [deploy_cloud_run.sh](/home/rahul/hackathons/gemini_cinema/deploy_cloud_run.sh) automates Cloud Run deployment.
-- Architecture diagram: [docs/architecture.md](/home/rahul/hackathons/gemini_cinema/docs/architecture.md).
+---
 
 ## Notes
-- Veo generation is long-running and quota-sensitive; the app falls back to Imagen when video is unavailable.
-- If your browser blocks autoplay, user interaction is required before background score starts.
+
+- **Veo quota** — Veo generation is quota-sensitive. The app always shows an Imagen still first; Veo is a bonus upgrade. If Veo fails or times out, the still stays.
+- **Lyria quota** — Requires `VERTEX_AUTH_MODE=project`. In `api_key` mode the BGM fallback (ambient track) plays instead.
+- **Browser autoplay** — Web Audio requires a user gesture before audio starts. Clicking "Produce My Documentary" satisfies this.
+- **Mic input** — Uses `MediaRecorder` at 16kHz mono. Chrome/Edge work best. Safari may require additional permissions.
