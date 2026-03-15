@@ -7,7 +7,7 @@ import {
   useCallback,
 } from "react";
 import { AudioEngine } from "./lib/audioEngine";
-import { saveSession, loadSession, StoredSession } from "./lib/sessionStore";
+import { saveSession, loadSession, listSessions, StoredSession } from "./lib/sessionStore";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -151,12 +151,28 @@ export default function ChronosCinema() {
     quizQuestions: null,
   });
 
-  // ── Load history from localStorage on mount ──
+  // ── Load history from Firebase (falls back to localStorage) on mount ──
   useEffect(() => {
+    // Always load localStorage immediately so history shows right away
     try {
       const s = localStorage.getItem(HISTORY_KEY);
       if (s) setHistory(JSON.parse(s));
     } catch {}
+
+    // Then try to enrich from Firebase
+    listSessions()
+      .then((sessions) => {
+        if (sessions.length === 0) return;
+        const entries: HistoryEntry[] = sessions.map((s) => ({
+          id: s.id,
+          topic: s.topic,
+          date: s.date,
+          saved: true,
+        }));
+        setHistory(entries);
+        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries)); } catch {}
+      })
+      .catch(() => {}); // silently ignore — localStorage already loaded above
   }, []);
 
   const saveToHistory = useCallback((entry: HistoryEntry) => {
@@ -280,6 +296,7 @@ export default function ChronosCinema() {
           const total = msg.total_beats as number;
           const dur = (msg.target_duration_seconds as number) || 35;
           setCurrentBeat(beatIdx);
+          currentBeatRef.current = beatIdx;
           setTotalBeats(total);
           setBeatDuration(dur);
           setSubtitles([]);
@@ -295,7 +312,12 @@ export default function ChronosCinema() {
           };
 
           const cached = visualByBeatRef.current[beatIdx];
-          if (cached) setCurrentVisual(cached);
+          if (cached) {
+            setCurrentVisual(cached);
+          } else {
+             // If we're starting a new beat and no image/video came yet, clear old visual
+             setCurrentVisual(null);
+          }
           audioEngineRef.current?.duckBgm();
           break;
         }
@@ -317,6 +339,14 @@ export default function ChronosCinema() {
             const cur = currentBeatRef.current;
             if (cur >= 0 && accRef.current.beatData[cur]) {
               accRef.current.beatData[cur].narrationChunks.push(chunk);
+              // If we're narrating but no visual is set, clear the "Composing..." spinner
+              // with a generic visual state so the UI doesn't look stuck.
+              if (!currentVisual) {
+                 console.log("[DEBUG] Audio arriving but no visual set. Clearing spinner.");
+                 setCurrentVisual({ type: "image", data: "", mimeType: "image/png", beatIndex: cur });
+              }
+            } else if (cur === -1 && storyCompleteRefLocal.current === false) {
+              // Closing reflection or intro before beat 0 — we could accumulate these too if needed
             }
           }
           break;
@@ -324,11 +354,18 @@ export default function ChronosCinema() {
 
         case "narration": {
           const text = msg.content as string;
-          addSubtitle(text);
-          // Accumulate
-          const cur = currentBeatRef.current;
-          if (cur >= 0 && accRef.current.beatData[cur] && text?.trim()) {
-            accRef.current.beatData[cur].subtitles.push(text.trim());
+          if (text) {
+            console.log("[DEBUG] Narration transcript:", text);
+            addSubtitle(text);
+            // Accumulate
+            const cur = currentBeatRef.current;
+            if (cur >= 0 && accRef.current.beatData[cur] && text.trim()) {
+              accRef.current.beatData[cur].subtitles.push(text.trim());
+              // Also clear spinner if text arrives (means narrator is active)
+              if (!currentVisual) {
+                setCurrentVisual({ type: "image", data: "", mimeType: "image/png", beatIndex: cur });
+              }
+            }
           }
           break;
         }
@@ -374,11 +411,14 @@ export default function ChronosCinema() {
 
         case "bgm_fallback": {
           await ensureAudio();
-          audioEngineRef.current?.playFallbackBgm();
+          if (!storyCompleteRefLocal.current) {
+            audioEngineRef.current?.playFallbackBgm();
+          }
           break;
         }
 
         case "quiz_data": {
+          console.log("[DEBUG] Received quiz_data", msg);
           const questions = msg.questions as QuizQuestion[];
           if (questions?.length > 0) {
             accRef.current.quizQuestions = questions; // accumulate
@@ -392,28 +432,58 @@ export default function ChronosCinema() {
             });
             quizReadyRef.current = true;
             quizReadyRefLocal.current = true;
-            if (storyCompleteRefLocal.current) setPhase("quiz");
+            console.log("[DEBUG] Quiz state set and readyRef = true");
+            // Don't transition here — story_complete's tryTransition handles drain + transition
           }
           break;
         }
 
         case "story_complete": {
-          audioEngineRef.current?.stopBgm(2);
+          console.log("[DEBUG] Received story_complete");
           storyCompleteRef.current = true;
           storyCompleteRefLocal.current = true;
-
+          audioEngineRef.current?.stopBgm(2);
           const saved = await saveCurrentSession();
-
-          if (quizReadyRefLocal.current) {
-            setPhase("quiz");
-          } else {
-            saveToHistory({
-              id: historyIdRef.current,
-              topic: currentTopicRef.current,
-              date: new Date().toISOString(),
-              saved,
-            });
-          }
+          saveToHistory({
+            id: historyIdRef.current,
+            topic: currentTopicRef.current,
+            date: new Date().toISOString(),
+            saved,
+          });
+          // Transition to quiz after narration drains (non-blocking — checked in useEffect)
+          const tryTransition = async () => {
+            console.log("[DEBUG] tryTransition started. isNarrationActive =", audioEngineRef.current?.isNarrationActive());
+            const t0 = Date.now();
+            
+            // Wait for audio, but with a hard cap that decreases as we wait
+            while (audioEngineRef.current?.isNarrationActive() && Date.now() - t0 < 8000) {
+              await new Promise(r => setTimeout(r, 200));
+            }
+            
+            console.log("[DEBUG] tryTransition loop finished. quizReadyRef =", quizReadyRef.current);
+            // Force phase transition
+            if (quizReadyRef.current) {
+              console.log("[DEBUG] Transitioning to quiz phase now.");
+              // Re-set quiz from the accumulator ref to guarantee it's committed
+              // in the same render batch as setPhase, avoiding a blank quiz screen.
+              const qs = accRef.current.quizQuestions;
+              if (qs?.length) {
+                setQuiz(prev => prev ?? {
+                  questions: qs,
+                  currentIdx: 0,
+                  answers: new Array(qs.length).fill(null),
+                  score: 0,
+                  showExplanation: false,
+                  topic: accRef.current.topic,
+                });
+              }
+              setPhase("quiz");
+            } else {
+              console.log("[DEBUG] No quiz ready, transitioning to done.");
+              setPhase("done");
+            }
+          };
+          tryTransition();
           break;
         }
 
@@ -465,6 +535,9 @@ export default function ChronosCinema() {
     historyIdRef.current = id;
     currentTopicRef.current = topic.trim();
     sessionSavedRef.current = false;
+
+    // Add to sidebar immediately (like ChatGPT new chat)
+    saveToHistory({ id, topic: topic.trim(), date: new Date().toISOString(), saved: false });
 
     // Reset accumulator
     accRef.current = {
@@ -740,28 +813,94 @@ export default function ChronosCinema() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-cinema-black flex flex-col">
+    <div className="min-h-screen bg-cinema-black flex">
+
+      {/* ── Persistent Left Sidebar ── */}
+      <aside className="w-64 flex-shrink-0 flex flex-col border-r border-cinema-border bg-cinema-black/95 fixed top-0 left-0 bottom-0 z-40 overflow-hidden">
+        {/* Logo */}
+        <div className="px-4 py-3 border-b border-cinema-border flex items-center gap-2">
+          <span className="font-display font-semibold tracking-widest text-xs uppercase text-gold-gradient">◈ CHRONOS CINEMA</span>
+        </div>
+
+        {/* New Documentary button */}
+        <div className="px-3 pt-3 pb-2">
+          <button
+            onClick={() => { stopPlayback(); setTopic(""); setQuiz(null); }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-cinema-border text-cinema-muted hover:border-cinema-gold/40 hover:text-cinema-text transition-all text-xs"
+          >
+            <span className="text-base leading-none">+</span> New Documentary
+          </button>
+        </div>
+
+        {/* Session list */}
+        <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-0.5">
+          {/* Active/in-progress session (not yet in history) */}
+          {phase !== "idle" && historyIdRef.current && !history.find(e => e.id === historyIdRef.current) && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cinema-gold/10 border border-cinema-gold/30 text-cinema-gold text-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-cinema-gold recording-dot flex-shrink-0" />
+              <span className="truncate">{topic || "Producing…"}</span>
+            </div>
+          )}
+          {history.length === 0 && phase === "idle" && (
+            <p className="text-cinema-muted/40 text-xs px-3 py-4 text-center">No documentaries yet</p>
+          )}
+          {history.map((entry) => {
+            const isActive = entry.id === historyIdRef.current;
+            return (
+              <button
+                key={entry.id}
+                onClick={() => entry.saved ? replayDocumentary(entry.id) : setTopic(entry.topic)}
+                className={`w-full text-left flex flex-col gap-0.5 px-3 py-2 rounded-lg transition-all text-xs group ${
+                  isActive
+                    ? "bg-cinema-card border border-cinema-gold/30 text-cinema-text"
+                    : "text-cinema-muted hover:bg-cinema-card hover:text-cinema-text"
+                }`}
+              >
+                <span className="truncate font-medium">{entry.topic}</span>
+                <div className="flex items-center gap-2 text-[10px] text-cinema-muted/60">
+                  <span>{new Date(entry.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                  {entry.score !== undefined && entry.total !== undefined && (
+                    <span className={entry.score / entry.total >= 0.8 ? "text-green-400" : "text-cinema-gold"}>
+                      {entry.score}/{entry.total}
+                    </span>
+                  )}
+                  {entry.saved && <span className="text-cinema-gold/50">↺</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* API key input at bottom */}
+        <div className="px-3 py-3 border-t border-cinema-border">
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              try { sessionStorage.setItem("chronos_api_key", e.target.value); } catch {}
+            }}
+            placeholder="Gemini API key…"
+            className="w-full bg-cinema-card border border-cinema-border rounded-lg px-3 py-1.5 text-cinema-text placeholder-cinema-muted/50 focus:outline-none focus:border-cinema-gold/50 transition-colors text-[10px] font-mono"
+          />
+        </div>
+      </aside>
+
+      {/* ── Main content (offset by sidebar width) ── */}
+      <div className="flex-1 flex flex-col min-h-screen ml-64">
 
       {/* ── Header ── */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-2.5 border-b border-cinema-border bg-cinema-black/95 backdrop-blur-md">
-        <button
-          onClick={() => (phase !== "idle" ? stopPlayback() : undefined)}
-          className="flex items-center gap-3 group"
-        >
-          <span className="font-display font-semibold tracking-widest text-xs uppercase text-gold-gradient">
-            ◈ CHRONOS CINEMA
-          </span>
-          {docTitle && phase !== "idle" && (
-            <span className="hidden md:flex items-center gap-1.5 text-cinema-muted text-xs truncate max-w-xs opacity-70">
-              {isReplaying && (
-                <span className="text-cinema-gold/60 text-[10px] font-medium border border-cinema-gold/20 px-1.5 py-0.5 rounded-full">
-                  ↺ REPLAY
-                </span>
-              )}
-              / {docTitle}
-            </span>
+      <header className="fixed top-0 left-64 right-0 z-50 flex items-center justify-between px-5 py-2.5 border-b border-cinema-border bg-cinema-black/95 backdrop-blur-md">
+        <div className="flex items-center gap-2 min-w-0">
+          {docTitle && phase !== "idle" ? (
+            <span className="text-cinema-text text-sm font-medium truncate">{docTitle}</span>
+          ) : (
+            <span className="text-cinema-muted text-sm">What would you like to explore?</span>
           )}
-        </button>
+          {isReplaying && (
+            <span className="text-cinema-gold/60 text-[10px] font-medium border border-cinema-gold/20 px-1.5 py-0.5 rounded-full flex-shrink-0">↺ REPLAY</span>
+          )}
+        </div>
 
         <div className="flex items-center gap-3">
           {bgmActive && phase === "playing" && !isPaused && (
@@ -771,34 +910,21 @@ export default function ChronosCinema() {
               ))}
             </div>
           )}
-
           {phase === "playing" && (
             <span className="text-xs text-cinema-muted tabular-nums hidden sm:block">
               {currentBeat >= 0 ? BEAT_LABELS[currentBeat] : "…"} · {Math.max(0, currentBeat + 1)}/{totalBeats}
             </span>
           )}
-
           {phase === "playing" && (
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={togglePause}
-                title={isPaused ? "Resume" : "Pause"}
-                className="p-2 rounded-lg text-cinema-muted hover:text-cinema-text hover:bg-cinema-card transition-all text-xs"
-              >
+              <button onClick={togglePause} title={isPaused ? "Resume" : "Pause"}
+                className="p-2 rounded-lg text-cinema-muted hover:text-cinema-text hover:bg-cinema-card transition-all text-xs">
                 {isPaused ? "▶" : "⏸"}
               </button>
-              <button
-                onClick={stopPlayback}
-                title="Stop"
-                className="p-2 rounded-lg text-cinema-muted hover:text-red-400 hover:bg-cinema-card transition-all text-xs"
-              >
-                ⏹
-              </button>
-              <button
-                onClick={toggleVideoSize}
-                title={videoSize === "default" ? "Theater mode" : "Default view"}
-                className="p-2 rounded-lg text-cinema-muted hover:text-cinema-text hover:bg-cinema-card transition-all text-xs hidden sm:block"
-              >
+              <button onClick={stopPlayback} title="Stop"
+                className="p-2 rounded-lg text-cinema-muted hover:text-red-400 hover:bg-cinema-card transition-all text-xs">⏹</button>
+              <button onClick={toggleVideoSize} title={videoSize === "default" ? "Theater mode" : "Default view"}
+                className="p-2 rounded-lg text-cinema-muted hover:text-cinema-text hover:bg-cinema-card transition-all text-xs hidden sm:block">
                 {videoSize === "default" ? "⊞" : "⊟"}
               </button>
             </div>
@@ -813,20 +939,8 @@ export default function ChronosCinema() {
           setTopic={setTopic}
           userName={userName}
           setUserName={setUserName}
-          apiKey={apiKey}
-          setApiKey={(k) => {
-            setApiKey(k);
-            try { sessionStorage.setItem("chronos_api_key", k); } catch {}
-          }}
           inputRef={inputRef}
           onStart={startDocumentary}
-          history={history}
-          onClearHistory={() => {
-            setHistory([]);
-            try { localStorage.removeItem(HISTORY_KEY); } catch {}
-          }}
-          onPickTopic={(t) => setTopic(t)}
-          onReplay={replayDocumentary}
         />
       )}
 
@@ -1055,28 +1169,22 @@ export default function ChronosCinema() {
           }}
         />
       )}
-    </div>
+      </div> {/* end main content */}
+    </div> /* end outer flex */
   );
 }
 
 // ─── Idle View ────────────────────────────────────────────────────────────────
 
 function IdleView({
-  topic, setTopic, userName, setUserName, apiKey, setApiKey, inputRef, onStart,
-  history, onClearHistory, onPickTopic, onReplay,
+  topic, setTopic, userName, setUserName, inputRef, onStart,
 }: {
   topic: string;
   setTopic: (t: string) => void;
   userName: string;
   setUserName: (n: string) => void;
-  apiKey: string;
-  setApiKey: (k: string) => void;
   inputRef: React.RefObject<HTMLInputElement>;
   onStart: () => void;
-  history: HistoryEntry[];
-  onClearHistory: () => void;
-  onPickTopic: (t: string) => void;
-  onReplay: (id: string) => void;
 }) {
   return (
     <div className="flex-1 flex flex-col items-center idle-bg pt-24 pb-16 px-4">
@@ -1096,31 +1204,6 @@ function IdleView({
         {/* Input card */}
         <div className="bg-cinema-card border border-cinema-border rounded-2xl p-6 space-y-4 shadow-2xl">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest flex items-center gap-2">
-              Gemini API Key
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-cinema-muted font-normal normal-case tracking-normal hover:text-cinema-gold transition-colors"
-              >
-                ↗ Get one free
-              </a>
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="AIza…"
-              className="w-full bg-cinema-black border border-cinema-border rounded-xl px-4 py-2.5 text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/50 transition-colors text-[0.9375rem] font-mono"
-              autoFocus
-            />
-            <p className="text-[10px] text-cinema-muted leading-relaxed">
-              Stored in browser session only — never sent to any server other than your own backend.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
             <label className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest">
               Documentary Topic
             </label>
@@ -1129,18 +1212,17 @@ function IdleView({
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && apiKey.trim() && onStart()}
+              onKeyDown={(e) => e.key === "Enter" && onStart()}
               placeholder="Black holes, DNA replication, the Roman Empire…"
               className="w-full bg-cinema-black border border-cinema-border rounded-xl px-4 py-2.5 text-cinema-text placeholder-cinema-muted focus:outline-none focus:border-cinema-gold/50 transition-colors text-[0.9375rem]"
+              autoFocus
             />
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest">
               Your Name{" "}
-              <span className="text-cinema-muted font-normal normal-case tracking-normal">
-                (optional — narrator addresses you)
-              </span>
+              <span className="text-cinema-muted font-normal normal-case tracking-normal">(optional)</span>
             </label>
             <input
               type="text"
@@ -1154,7 +1236,7 @@ function IdleView({
 
           <button
             onClick={onStart}
-            disabled={!topic.trim() || !apiKey.trim()}
+            disabled={!topic.trim()}
             className="w-full py-3 rounded-xl font-semibold text-[0.9375rem] tracking-wide btn-produce"
           >
             ▶ Produce My Documentary
@@ -1170,89 +1252,11 @@ function IdleView({
             { icon: "🎵", label: "Lyria Score" },
             { icon: "🧠", label: "Knowledge Quiz" },
           ].map((f) => (
-            <span
-              key={f.label}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cinema-card border border-cinema-border text-[0.75rem] text-cinema-muted"
-            >
+            <span key={f.label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cinema-card border border-cinema-border text-[0.75rem] text-cinema-muted">
               {f.icon} {f.label}
             </span>
           ))}
         </div>
-
-        {/* History */}
-        {history.length > 0 && (
-          <div className="mt-10">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[10px] font-semibold text-cinema-gold uppercase tracking-widest">
-                Recent Documentaries
-              </h3>
-              <button
-                onClick={onClearHistory}
-                className="text-[11px] text-cinema-muted hover:text-cinema-text transition-colors"
-              >
-                Clear all
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              {history.slice(0, 10).map((entry) => (
-                <div
-                  key={entry.id}
-                  className="history-card flex items-center gap-2 px-3 py-2.5 rounded-xl bg-cinema-card border border-cinema-border hover:border-cinema-gold/25 transition-all group"
-                >
-                  {/* Topic — click to pre-fill */}
-                  <button
-                    onClick={() => onPickTopic(entry.topic)}
-                    className="flex-1 flex items-center gap-2.5 min-w-0 text-left"
-                  >
-                    <span className="text-cinema-gold/40 text-[11px] flex-shrink-0">◈</span>
-                    <span className="text-cinema-text text-sm truncate group-hover:text-white transition-colors">
-                      {entry.topic}
-                    </span>
-                  </button>
-
-                  {/* Quiz score */}
-                  {entry.score !== undefined && entry.total !== undefined && (
-                    <span
-                      className={`text-xs font-medium tabular-nums flex-shrink-0 ${
-                        entry.score / entry.total >= 0.8
-                          ? "text-green-400"
-                          : entry.score / entry.total >= 0.6
-                          ? "text-cinema-gold"
-                          : "text-cinema-muted"
-                      }`}
-                    >
-                      {entry.score}/{entry.total}
-                    </span>
-                  )}
-
-                  {/* Date */}
-                  <span className="text-[11px] text-cinema-muted/60 flex-shrink-0">
-                    {new Date(entry.date).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-
-                  {/* Replay button — only shown if session saved */}
-                  {entry.saved && (
-                    <button
-                      onClick={() => onReplay(entry.id)}
-                      title="Replay saved session (no API calls)"
-                      className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg bg-cinema-black border border-cinema-gold/20 text-cinema-gold text-[10px] font-semibold hover:border-cinema-gold/50 hover:bg-cinema-gold/5 transition-all"
-                    >
-                      ↺ Replay
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <p className="mt-3 text-[10px] text-cinema-muted/40 text-center">
-              Click a topic to re-create · ↺ Replay plays from saved session without API calls
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

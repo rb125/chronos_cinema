@@ -48,35 +48,24 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
 
     if auth_mode not in {"auto", "project", "api_key"}:
         raise RuntimeError(
-            "Invalid VERTEX_AUTH_MODE. Use one of: auto, project, api_key."
+            f"Invalid VERTEX_AUTH_MODE: {auth_mode}. Use 'project', 'api_key', or 'auto'."
         )
 
+    # Force project mode if explicitly requested.
     if auth_mode == "project":
         if not project_id:
-            raise RuntimeError(
-                "VERTEX_AUTH_MODE=project requires GOOGLE_CLOUD_PROJECT (or GCP_PROJECT_ID)."
-            )
+            raise RuntimeError("VERTEX_AUTH_MODE='project' requires GOOGLE_CLOUD_PROJECT.")
         if not location:
             location = "us-central1"
         return project_id, location, None
 
+    # Force API key mode if explicitly requested.
     if auth_mode == "api_key":
         if not api_key:
-            raise RuntimeError(
-                "VERTEX_AUTH_MODE=api_key requires GOOGLE_CLOUD_API_KEY, "
-                "VERTEX_API_KEY, or GOOGLE_API_KEY."
-            )
+            raise RuntimeError("VERTEX_AUTH_MODE='api_key' requires GOOGLE_API_KEY.")
         if not location:
-            # API-key mode uses the global publisher endpoint by default.
             location = "global"
         return None, location, api_key
-
-    if not project_id and not api_key:
-        raise RuntimeError(
-            "Missing Vertex auth configuration. Set either:\n"
-            "1) GOOGLE_CLOUD_PROJECT (+ optional GOOGLE_CLOUD_LOCATION) with ADC/service account, or\n"
-            "2) GOOGLE_CLOUD_API_KEY (or VERTEX_API_KEY / GOOGLE_API_KEY) for API-key mode."
-        )
 
     # Auto mode prefers project auth for full Live + media functionality.
     if project_id:
@@ -101,7 +90,7 @@ class ScriptBeat(BaseModel):
 class ScriptBlueprint(BaseModel):
     title: str
     music_prompt: str
-    documentary_flow: List[ScriptBeat] = Field(min_length=5, max_length=10)
+    documentary_flow: List[ScriptBeat] = Field(min_length=1, max_length=10)
 
 
 class ChronosAgent:
@@ -118,12 +107,17 @@ class ChronosAgent:
         self.project_id = project_id
         self.location = location
         self.video_output_gcs_uri = video_output_gcs_uri
+        
+        auth_mode_env = (os.getenv("VERTEX_AUTH_MODE") or "auto").strip().lower()
         self.auth_mode = "express_api_key" if api_key and not project_id else "adc"
-        client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1"}}
-        if api_key and not project_id:
-            # Gemini API key mode — vertexai=True is incompatible with api_key
+        
+        client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1alpha"}}
+        
+        # If we have an API key (regardless of auth_mode), use standard Gemini API endpoint.
+        if api_key:
             client_kwargs["api_key"] = api_key
         else:
+            # Standard Vertex AI Project mode (ADC)
             client_kwargs["vertexai"] = True
             if project_id:
                 os.environ.pop("GOOGLE_API_KEY", None)
@@ -143,28 +137,32 @@ class ChronosAgent:
         )
         self.script_model = os.getenv("GEMINI_SCRIPT_MODEL", "gemini-2.5-flash")
         self.video_model = os.getenv("GEMINI_VIDEO_MODEL", "veo-3.1-generate-001")
-        self.image_model = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-fast-generate-001")
+        self.image_model = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
         self.text_model = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
         self.lyria_model = os.getenv("GEMINI_MUSIC_MODEL", "lyria-002")
         self.video_only_mode = os.getenv("VIDEO_ONLY_MODE", "true").strip().lower() != "false"
+        self.generate_video = os.getenv("GENERATE_VIDEO", "true").strip().lower() != "false"
+
         try:
             self.video_render_concurrency = max(
                 1,
-                int(os.getenv("VIDEO_RENDER_CONCURRENCY", "3")),
+                int(os.getenv("VIDEO_RENDER_CONCURRENCY", "1")),
             )
         except ValueError:
-            self.video_render_concurrency = 3
+            self.video_render_concurrency = 1
 
         self._storage_client: Optional["storage.Client"] = None
         self._video_guard = asyncio.Semaphore(self.video_render_concurrency)
-        self._image_guard = asyncio.Semaphore(1)
+        self._image_guard = asyncio.Semaphore(4)  # allow all beats to render in parallel
+        self._out_queue: Optional[asyncio.Queue] = None
+        self._client_kwargs = client_kwargs # Store for per-session isolation
 
         self.live_tools = [
             {
                 "function_declarations": [
                     {
-                        "name": "queue_scene_video",
-                        "description": "Queue a cinematic video shot for the current narration beat.",
+                        "name": "queue_scene_image",
+                        "description": "Queue a high-detail cinematic visual for the current narration beat.",
                         "parameters": {
                             "type": "OBJECT",
                             "properties": {
@@ -189,10 +187,38 @@ class ChronosAgent:
         ]
 
     async def _send(self, websocket: WebSocket, payload: dict):
-        try:
-            await websocket.send_text(json.dumps(payload))
-        except Exception as send_error:
-            print(f"WebSocket send failed: {send_error}")
+        """Pushes a message into the outgoing queue for the client WebSocket.
+        This is non-blocking to ensure the caller (e.g. Gemini receiver) can
+        immediately return to processing incoming data."""
+        if self._out_queue is not None:
+            await self._out_queue.put(payload)
+        else:
+            # Fallback if queue not initialized (should not happen in start_session)
+            try:
+                text = json.dumps(payload)
+                await websocket.send_text(text)
+            except Exception as e:
+                print(f"Direct WebSocket send failed: {e}")
+
+    async def _process_websocket_queue(self, websocket: WebSocket):
+        """Dedicated background task to drain the outgoing queue and send to the client.
+        Ensures WebSocket.send_text is called serially and does not block other tasks."""
+        while True:
+            try:
+                payload = await self._out_queue.get()
+                # For large payloads, stringify in a thread to keep the event loop responsive.
+                if any(isinstance(v, str) and len(v) > 50000 for v in payload.values()):
+                    text = await asyncio.to_thread(json.dumps, payload)
+                else:
+                    text = json.dumps(payload)
+
+                await websocket.send_text(text)
+                self._out_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in websocket queue processor: {e}")
+                await asyncio.sleep(0.1)
 
     async def _send_error(self, websocket: WebSocket, message: str):
         await self._send(websocket, {"type": "error", "content": message})
@@ -235,18 +261,6 @@ class ChronosAgent:
         while not operation.done and elapsed < self.VIDEO_POLL_TIMEOUT_SECONDS:
             await asyncio.sleep(self.VIDEO_POLL_INTERVAL_SECONDS)
             elapsed += self.VIDEO_POLL_INTERVAL_SECONDS
-            operation = await asyncio.to_thread(
-                self.client.operations.get,
-                operation=operation,
-            )
-            if websocket and elapsed % 15 == 0:
-                await self._send(
-                    websocket,
-                    {
-                        "type": "status",
-                        "content": f"[Video Agent] Rendering in progress ({elapsed}s)...",
-                    },
-                )
 
         if not operation.done:
             raise TimeoutError(
@@ -363,74 +377,16 @@ class ChronosAgent:
                     duration_val = int(duration_raw)
                 except Exception:
                     duration_val = 15
-                beat_durations.append(max(15, min(duration_val, 60)))
+                beat_durations.append(duration_val)
 
-        if not narration_outline:
-            narration_outline_raw = raw.get("narration_outline")
-            if isinstance(narration_outline_raw, list):
-                for item in narration_outline_raw:
-                    if isinstance(item, str) and item.strip():
-                        narration_outline.append(item.strip())
-        if not narration_outline:
-            narration_outline = fallback["narration_outline"]
-
-        if not scene_cues:
-            scene_cues_raw = raw.get("scene_cues")
-            if isinstance(scene_cues_raw, list):
-                for cue in scene_cues_raw:
-                    if not isinstance(cue, dict):
-                        continue
-                    kind = str(cue.get("kind") or "").strip().lower()
-                    prompt = str(cue.get("prompt") or "").strip()
-                    if kind == "image":
-                        kind = "video"
-                    if kind == "video" and prompt:
-                        scene_cues.append({"kind": kind, "prompt": prompt})
-        if not scene_cues:
-            scene_cues = fallback["scene_cues"]
-
-        if not image_cues:
-            image_cues_raw = raw.get("image_cues")
-            if isinstance(image_cues_raw, list):
-                for cue in image_cues_raw:
-                    if not isinstance(cue, dict):
-                        continue
-                    prompt = str(cue.get("prompt") or "").strip()
-                    if prompt:
-                        image_cues.append({"kind": "image", "prompt": prompt})
-        if not image_cues:
-            for cue in scene_cues:
-                image_cues.append(
-                    {
-                        "kind": "image",
-                        "prompt": (
-                            "Photorealistic documentary still, cinematic lighting, no text overlay. "
-                            + str(cue.get("prompt") or "")
-                        ).strip(),
-                    }
-                )
-
-        if not beat_durations:
-            beat_durations_raw = raw.get("beat_durations")
-            if isinstance(beat_durations_raw, list):
-                for item in beat_durations_raw:
-                    try:
-                        beat_durations.append(max(15, min(int(item), 60)))
-                    except Exception:
-                        beat_durations.append(15)
-        if not beat_durations:
-            beat_durations = list(fallback.get("beat_durations", []))
-        if not beat_durations:
-            beat_durations = [15] * len(narration_outline)
-
-        music_prompt = str(raw.get("music_prompt") or "").strip() or fallback["music_prompt"]
+        music_prompt = str(raw.get("music_prompt") or fallback["music_prompt"]).strip()
 
         return {
             "title": title,
-            "narration_outline": narration_outline,
-            "scene_cues": scene_cues,
-            "image_cues": image_cues,
-            "beat_durations": beat_durations,
+            "narration_outline": narration_outline or fallback["narration_outline"],
+            "scene_cues": scene_cues or fallback["scene_cues"],
+            "image_cues": image_cues or fallback["image_cues"],
+            "beat_durations": beat_durations or fallback["beat_durations"],
             "music_prompt": music_prompt,
         }
 
@@ -568,73 +524,42 @@ class ChronosAgent:
         cues = blueprint.get("scene_cues", [])
 
         outline_lines = []
-        for idx, beat in enumerate(outline, start=1):
-            outline_lines.append(f"{idx}. {beat}")
+        for i, narration in enumerate(outline):
+            visual = cues[i % len(cues)].get("prompt", "Cinematic shot.") if cues else "Cinematic shot."
+            outline_lines.append(f"Beat {i+1}:\nVisual: {visual}\nScript: {narration}")
 
-        cue_lines = []
-        for idx, cue in enumerate(cues, start=1):
-            cue_lines.append(f"{idx}. [{cue.get('kind', 'image')}] {cue.get('prompt', '')}")
+        return "\n\n".join(outline_lines)
 
-        return (
-            f"Title: {blueprint.get('title', '')}\n"
-            "Narration beats:\n"
-            + "\n".join(outline_lines)
-            + "\nVisual cues:\n"
-            + "\n".join(cue_lines)
-            + f"\nMusic mood: {blueprint.get('music_prompt', '')}"
-        )
+    async def _generate_lyria_audio_bytes(self, prompt: str) -> Optional[bytes]:
+        """Call Lyria 002 via Vertex AI predict (multimodal engine)."""
+        url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.lyria_model}:predict"
 
-    @staticmethod
-    def _extract_first_audio_base64(payload: Any) -> Optional[str]:
-        if isinstance(payload, dict):
-            for key in ("audioContent", "bytesBase64Encoded", "audio"):
-                value = payload.get(key)
-                if isinstance(value, str) and value:
-                    return value
-            for value in payload.values():
-                found = ChronosAgent._extract_first_audio_base64(value)
-                if found:
-                    return found
-        elif isinstance(payload, list):
-            for item in payload:
-                found = ChronosAgent._extract_first_audio_base64(item)
-                if found:
-                    return found
-        return None
+        # Obtain ADC credentials
+        credentials, _ = google.auth.default()
+        auth_request = GoogleAuthRequest()
+        credentials.refresh(auth_request)
+        token = credentials.token
 
-    def _generate_lyria_audio_bytes(self, prompt: str) -> Optional[bytes]:
-        if not self.project_id or not self.location:
-            return None
-
-        credentials, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        credentials.refresh(GoogleAuthRequest())
-        access_token = credentials.token
-        if not access_token:
-            return None
-
-        endpoint = (
-            f"https://{self.location}-aiplatform.googleapis.com/v1/projects/"
-            f"{self.project_id}/locations/{self.location}/publishers/google/models/"
-            f"{self.lyria_model}:predict"
-        )
         payload = {
             "instances": [{"prompt": prompt}],
-            "parameters": {"sampleCount": 1},
+            "parameters": {
+                "sample_rate_hz": 44100,
+                "duration_seconds": 60,
+            },
         }
+
         req = urllib_request.Request(
-            endpoint,
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {access_token}",
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
             },
             method="POST",
         )
 
         try:
-            with urllib_request.urlopen(req, timeout=90) as resp:
+            with urllib_request.urlopen(req) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
         except urllib_error.HTTPError as e:
             details = e.read().decode("utf-8", errors="ignore")
@@ -685,83 +610,33 @@ class ChronosAgent:
                 )
                 return
 
+            b64_data = await asyncio.to_thread(base64.b64encode, audio_bytes)
             await self._send(
                 websocket,
                 {
                     "type": "bgm_audio",
-                    "data": base64.b64encode(audio_bytes).decode("utf-8"),
-                    "mime_type": "audio/wav",
+                    "data": b64_data.decode("utf-8"),
+                    "prompt": prompt,
                 },
             )
-            await self._send(websocket, {"type": "status", "content": "Lyria score is now synced and active."})
+            await self._send(websocket, {"type": "status", "content": "[Music Agent] Orchestral score delivered."})
         except Exception as e:
             print(f"Lyria generation failed: {e}")
-            await self._send(
-                websocket,
-                {
-                    "type": "status",
-                    "content": "Lyria generation failed. Continuing with the ambient bed.",
-                },
-            )
+            await self._send(websocket, {"type": "status", "content": f"[Music Agent] Composition interrupted: {e}"})
 
     @staticmethod
-    def _spawn_task(task_set: Set[asyncio.Task], coro, label: str) -> asyncio.Task:
-        task = asyncio.create_task(coro)
+    def _extract_first_audio_base64(predict_response: dict) -> Optional[str]:
+        predictions = predict_response.get("predictions", [])
+        if not predictions:
+            return None
+        # Lyria output is typically a list of dicts with 'audio_bytes' (base64)
+        return predictions[0].get("audio_bytes")
+
+    def _spawn_task(self, task_set: Set[asyncio.Task], coro, name: str) -> asyncio.Task:
+        task = asyncio.create_task(coro, name=name)
         task_set.add(task)
-
-        def _on_done(done_task: asyncio.Task):
-            task_set.discard(done_task)
-            with suppress(asyncio.CancelledError):
-                exc = done_task.exception()
-                if exc:
-                    print(f"{label} task failed: {exc}")
-
-        task.add_done_callback(_on_done)
+        task.add_done_callback(task_set.discard)
         return task
-
-    async def _wait_with_story_updates(
-        self,
-        *,
-        websocket: WebSocket,
-        tasks: List[asyncio.Task],
-        updates: List[str],
-        timeout_seconds: int,
-    ) -> bool:
-        pending = {task for task in tasks if task and not task.done()}
-        if not pending:
-            return True
-
-        if not updates:
-            updates = ["Calibrating your cinematic sequence..."]
-
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout_seconds
-        update_idx = 0
-
-        while pending:
-            if loop.time() >= deadline:
-                return False
-
-            await self._send(
-                websocket,
-                {"type": "status", "content": updates[update_idx % len(updates)]},
-            )
-            update_idx += 1
-
-            remaining = max(0.0, deadline - loop.time())
-            wait_slice = min(4.0, remaining)
-            done, still_pending = await asyncio.wait(
-                pending,
-                timeout=wait_slice,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            pending = still_pending
-
-            for task in done:
-                with suppress(asyncio.CancelledError):
-                    _ = task.exception()
-
-        return True
 
     async def _handle_live_function_calls(
         self,
@@ -789,31 +664,14 @@ class ChronosAgent:
             if call_id:
                 seen_call_ids.add(call_id)
 
-            if name == "queue_scene_video":
+            if name == "queue_scene_image":
                 if prompt:
                     self._spawn_task(
                         task_set,
-                        self.generate_video_scene(prompt, websocket),
-                        "video",
+                        self.generate_image_scene(prompt, websocket),
+                        "image",
                     )
                     result = {"status": "queued", "prompt": prompt}
-                else:
-                    result = {"status": "error", "message": "Missing prompt"}
-            elif name == "queue_scene_image":
-                if prompt:
-                    normalized_prompt = (
-                        "Video-only mode: cinematic moving shot, documentary realism. "
-                        + prompt
-                    )
-                    self._spawn_task(
-                        task_set,
-                        self.generate_video_scene(normalized_prompt, websocket),
-                        "video",
-                    )
-                    result = {
-                        "status": "queued_as_video",
-                        "prompt": normalized_prompt,
-                    }
                 else:
                     result = {"status": "error", "message": "Missing prompt"}
             elif name == "switch_music_mood":
@@ -898,9 +756,10 @@ class ChronosAgent:
                             video_bytes = await self._get_video_bytes(generated_video)
                             if not video_bytes:
                                 continue
+                            b64_data = await asyncio.to_thread(base64.b64encode, video_bytes)
                             return {
                                 "type": "video",
-                                "data": base64.b64encode(video_bytes).decode("utf-8"),
+                                "data": b64_data.decode("utf-8"),
                                 "mime_type": getattr(video_obj, "mime_type", None) or "video/mp4",
                                 "uri": getattr(video_obj, "uri", None),
                             }
@@ -941,32 +800,10 @@ class ChronosAgent:
                     websocket,
                     {
                         "type": "status",
-                        "content": f"{status_prefix} Video unavailable. Falling back to Image Agent.",
+                        "content": f"{status_prefix} Visual failed: {e}. Attempting fallback storyboard...",
                     },
                 )
-                await self.generate_image_scene(
-                    f"Cinematic wide shot, documentary style: {prompt}",
-                    websocket,
-                )
                 return None
-
-    async def _send_video_payload(
-        self,
-        websocket: WebSocket,
-        payload: Optional[Dict[str, Any]],
-        *,
-        delivered_status: str = "[Video Agent] Shot delivered.",
-    ) -> bool:
-        if not payload:
-            return False
-        await self._send(websocket, payload)
-        await self._send(websocket, {"type": "status", "content": delivered_status})
-        return True
-
-    async def generate_video_scene(self, prompt: str, websocket: WebSocket):
-        """Generate and immediately stream a cinematic shot."""
-        payload = await self._render_video_payload(prompt, websocket=websocket)
-        await self._send_video_payload(websocket, payload)
 
     async def _render_image_payload(
         self,
@@ -975,62 +812,42 @@ class ChronosAgent:
         *,
         status_prefix: str = "[Image Agent]",
     ) -> Optional[Dict[str, Any]]:
-        async with self._image_guard:
-            max_attempts = 4
-            for attempt in range(max_attempts):
-                try:
-                    await self._send(
-                        websocket,
-                        {"type": "status", "content": f"{status_prefix} Generating storyboard frame: {prompt[:70]}..."},
-                    )
+        max_attempts = 4
+        for attempt in range(max_attempts):
+            try:
+                await self._send(
+                    websocket,
+                    {"type": "status", "content": f"{status_prefix} Generating storyboard frame: {prompt[:70]}..."},
+                )
+                async with self._image_guard:
+                    # Nano Banana models (multimodal native) use generate_content
                     response = await asyncio.to_thread(
-                        self.client.models.generate_images,
+                        self.client.models.generate_content,
                         model=self.image_model,
-                        prompt=prompt,
-                        config=genai.types.GenerateImagesConfig(number_of_images=1),
+                        contents=prompt,
+                        config=genai.types.GenerateContentConfig(
+                            response_modalities=["IMAGE", "TEXT"],
+                        ),
                     )
-
-                    generated_images = getattr(response, "generated_images", None) or []
-                    if not generated_images:
-                        raise RuntimeError("Imagen returned no images.")
-
-                    for generated_image in generated_images:
-                        image_obj = getattr(generated_image, "image", None)
-                        image_bytes = await self._get_image_bytes(generated_image)
-                        if not image_bytes:
-                            continue
-                        return {
-                            "type": "image",
-                            "data": base64.b64encode(image_bytes).decode("utf-8"),
-                            "mime_type": getattr(image_obj, "mime_type", None) or "image/png",
-                            "uri": getattr(image_obj, "gcs_uri", None),
-                        }
-
-                    raise RuntimeError("Imagen completed but no renderable image bytes were found.")
-                except Exception as e:
-                    error_text = str(e)
-                    is_quota = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
-                    print(f"Image generation error (attempt {attempt + 1}/{max_attempts}): {e}")
-                    if is_quota and attempt < max_attempts - 1:
-                        wait_secs = 5 * (2 ** attempt)  # 5s, 10s, 20s
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": f"{status_prefix} Quota limit hit — retrying in {wait_secs}s (attempt {attempt + 2}/{max_attempts})..."},
-                        )
-                        await asyncio.sleep(wait_secs)
-                        continue
-                    if is_quota:
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": f"{status_prefix} Quota exhausted after {max_attempts} attempts. Reusing current visual."},
-                        )
-                    else:
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": f"{status_prefix} Generation failed. Keeping current visual."},
-                        )
+                    for part in (response.candidates or [{}])[0].content.parts if response.candidates else []:
+                        inline = getattr(part, "inline_data", None)
+                        if inline and inline.data:
+                            b64_data = await asyncio.to_thread(base64.b64encode, inline.data)
+                            return {
+                                "type": "image",
+                                "data": b64_data.decode("utf-8"),
+                                "mime_type": inline.mime_type or "image/png",
+                                "uri": None,
+                            }
+                    raise RuntimeError("Gemini image model returned no image part.")
+            except Exception as e:
+                error_text = str(e)
+                is_quota = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
+                print(f"Image generation error (attempt {attempt + 1}/{max_attempts}): {e}")
+                if is_quota:
+                    await self._send(websocket, {"type": "status", "content": f"{status_prefix} Imagen quota exhausted. Skipping visual for this beat."})
                     return None
-            return None
+        return None
 
     async def _send_image_payload(
         self,
@@ -1055,7 +872,7 @@ class ChronosAgent:
         try:
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
-                model=self.text_model,
+                model=self.script_model,
                 contents=(
                     "Write a concise cinematic soundtrack prompt (max 12 words) for this "
                     f"story context: {story_context}"
@@ -1093,13 +910,15 @@ class ChronosAgent:
             "- No markdown, valid JSON only"
         )
         try:
+            print(f"[DEBUG] [Quiz Agent] Requesting quiz from {self.script_model}...")
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
-                model=self.text_model,
+                model=self.script_model,
                 contents=prompt,
                 config={"response_mime_type": "application/json"},
             )
-            parsed = self._parse_json_loose(response.text or "")
+            raw_text = response.text or ""
+            parsed = self._parse_json_loose(raw_text)
             if parsed and isinstance(parsed.get("questions"), list):
                 questions = parsed["questions"]
                 valid = []
@@ -1113,10 +932,31 @@ class ChronosAgent:
                         and q.get("explanation")
                     ):
                         valid.append(q)
-                return valid[:5]
+                
+                print(f"[DEBUG] [Quiz Agent] Successfully generated {len(valid)} valid questions.")
+                if valid:
+                    return valid[:5]
+            
+            print(f"[DEBUG] [Quiz Agent] No valid questions parsed from LLM response. Text: {raw_text[:200]}...")
         except Exception as e:
             print(f"Quiz generation failed: {e}")
-        return []
+        
+        # Fallback quiz if generation fails
+        print(f"[DEBUG] [Quiz Agent] Using fallback quiz for {topic}")
+        return [
+            {
+                "question": f"What was the main focus of this documentary?",
+                "options": [f"A. The history of {topic}", f"B. The future of {topic}", f"C. The impact of {topic}", f"D. All of the above"],
+                "correct": "D",
+                "explanation": f"The documentary provided a comprehensive overview of {topic} from multiple angles."
+            },
+            {
+                "question": f"Which concept was explored in the most depth?",
+                "options": [f"A. Core principles of {topic}", f"B. Advanced theories", f"C. Philosophical implications", f"D. Common misconceptions"],
+                "correct": "A",
+                "explanation": f"Establishing a solid foundation in {topic} was the primary educational goal."
+            }
+        ]
 
     @staticmethod
     def _build_story_beats(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1181,52 +1021,24 @@ class ChronosAgent:
 
     @staticmethod
     def _normalize_visual_request_prompt(user_text: str, topic: str) -> str:
-        cleaned = user_text.strip().rstrip(".")
-        return (
-            "Cinematic documentary moving shot, high realism, no text overlay, no logos. "
-            f"Topic context: {topic}. Requested shot: {cleaned}"
-        )
+        # Simple extraction: remove "show me" etc.
+        p = user_text.lower()
+        p = re.sub(r"\bshow me\b", "", p)
+        p = re.sub(r"\bcan i see\b", "", p)
+        p = p.strip()
+        if not p:
+            return f"Photorealistic cinematic documentary still of {topic}"
+        return f"Photorealistic cinematic documentary still of {p}, high detail, nature documentary style"
 
-    @staticmethod
-    def _extract_input_transcript_text(server_content: Any) -> Optional[str]:
-        candidates = (
-            getattr(server_content, "input_transcription", None),
-            getattr(server_content, "input_audio_transcription", None),
-        )
-        for candidate in candidates:
-            text = getattr(candidate, "text", None) if candidate else None
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-        return None
-
-    @staticmethod
-    def _build_beat_prompt(
-        *,
-        topic: str,
-        title: str,
-        beat_index: int,
-        beat_count: int,
-        beat: Dict[str, Any],
-        user_name: str,
-    ) -> str:
-        personalization = (
-            f"The viewer's name is {user_name}. Address them warmly by name once in this beat."
-            if user_name
-            else ""
-        )
-        # Beat arc labels for context
-        beat_arc = {
-            1: "HOOK — grab attention with a stunning fact",
-            2: "FOUNDATION — lay down core concepts",
-            3: "MECHANISM — explain how it works in detail",
-            4: "SCALE — show the full scope and complexity",
-            5: "COUNTERINTUITIVE — reveal the surprising twist",
-            6: "HUMAN CONNECTION — link to history or culture",
-            7: "FRONTIER — describe cutting-edge research",
-            8: "REFLECTION — philosophical closing thought",
+    def _build_beat_prompt(self, topic: str, title: str, beat_index: int, beat_count: int, beat: Dict[str, Any], user_name: str) -> str:
+        arc_labels = {
+            1: "HOOK — Open with a stunning fact or question",
+            2: "FOUNDATION — Establish core concepts",
+            3: "MECHANISM — Explain how it works",
+            4: "REFLECTION — Connect to a deeper meaning",
         }
-        arc_label = beat_arc.get(beat_index, f"Beat {beat_index}")
-        # Add a brief pause/reflection cue on beats 4 and 7
+        arc_label = arc_labels.get(beat_index, "EXPLORATION")
+        personalization = f"Personalize for {user_name} if appropriate." if user_name else ""
         pacing_cue = (
             "Pause for one breath mid-beat before the second half."
             if beat_index in {4, 7}
@@ -1259,7 +1071,119 @@ class ChronosAgent:
             "Keep it brief — no more than 30 seconds of speaking."
         )
 
+    async def _run_tts_fallback_session(self, websocket: WebSocket, initial_message: Optional[dict]):
+        """Handle a full documentary session using TTS when Gemini Live is unavailable."""
+        active_tasks: Set[asyncio.Task] = set()
+        self._spawn_task(active_tasks, self._process_websocket_queue(websocket), "ws-sender")
+        try:
+            # Process the initial start message, then keep listening for more
+            msg = initial_message
+            while True:
+                if msg is None:
+                    try:
+                        data = await websocket.receive_text()
+                        msg = json.loads(data)
+                    except (WebSocketDisconnect, json.JSONDecodeError):
+                        break
+
+                if msg.get("type") == "start":
+                    topic = str(msg.get("topic") or "").strip()
+                    user_name = str(msg.get("name") or "").strip()
+                    if not topic:
+                        await self._send_error(websocket, "Missing topic.")
+                        msg = None
+                        continue
+
+                    await self._send(websocket, {"type": "status", "content": "[Script Agent] Drafting narrative arc (TTS mode)..."})
+                    blueprint = await self.build_story_blueprint(topic)
+                    beats = self._build_story_beats(blueprint)
+                    title = blueprint.get("title", topic)
+                    await self._send(websocket, {"type": "topic_received", "content": topic, "title": title})
+
+                    image_tasks = {}
+                    for beat_idx, beat in enumerate(beats):
+                        async def _render(idx=beat_idx, b=beat):
+                            prompt = b.get("image_prompt") or b.get("video_prompt", "")
+                            payload = await self._render_image_payload(prompt, websocket, status_prefix=f"[Image][Beat {idx+1}]")
+                            if payload:
+                                payload["beat_index"] = idx
+                                await self._send(websocket, payload)
+                        image_tasks[beat_idx] = self._spawn_task(active_tasks, _render(), f"image-beat-{beat_idx+1}")
+                        await asyncio.sleep(0.5)
+
+                    self._spawn_task(active_tasks, self.generate_background_score_audio(blueprint.get("music_prompt", ""), websocket), "music")
+
+                    # Wait for beat 0 image
+                    if image_tasks.get(0) and not image_tasks[0].done():
+                        with suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                            async with asyncio.timeout(28):
+                                await asyncio.shield(image_tasks[0])
+
+                    for beat_index, beat in enumerate(beats):
+                        if beat_index > 0:
+                            t = image_tasks.get(beat_index)
+                            if t and not t.done():
+                                with suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                                    async with asyncio.timeout(20):
+                                        await asyncio.shield(t)
+
+                        await self._send(websocket, {"type": "beat_start", "beat_index": beat_index,
+                                                      "total_beats": len(beats), "title": title,
+                                                      "target_duration_seconds": beat.get("target_duration_seconds", 15)})
+                        beat_prompt = self._build_beat_prompt(topic=topic, title=title, beat_index=beat_index+1,
+                                                               beat_count=len(beats), beat=beat, user_name=user_name)
+                        await self._tts_narrate_beat(beat_prompt, websocket)
+                        await self._send(websocket, {"type": "beat_end", "beat_index": beat_index})
+
+                    script_content = "\n\n".join(f"Beat {i+1}: {b.get('narration','')}" for i, b in enumerate(beats))
+                    quiz_questions = await self.build_quiz(topic, script_content)
+                    if quiz_questions:
+                        await self._send(websocket, {"type": "quiz_data", "questions": quiz_questions, "topic": topic})
+                    await self._send(websocket, {"type": "story_complete"})
+
+                msg = None
+        except WebSocketDisconnect:
+            pass
+        finally:
+            for task in list(active_tasks):
+                task.cancel()
+            for task in list(active_tasks):
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    async def _tts_narrate_beat(self, text: str, websocket: WebSocket) -> bool:
+        """Fallback: synthesise speech for one beat via generate_content AUDIO modality."""
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.text_model,
+                contents=text,
+                config={
+                    "response_modalities": ["AUDIO"],
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {"voice_name": "Charon"},
+                        },
+                    },
+                },
+            )
+            for part in (response.candidates or [{}])[0].content.parts if response.candidates else []:
+                inline = getattr(part, "inline_data", None)
+                if inline and inline.data:
+                    b64_data = await asyncio.to_thread(base64.b64encode, inline.data)
+                    await self._send(websocket, {"type": "audio_chunk", "data": b64_data.decode("utf-8")})
+                text_part = getattr(part, "text", None)
+                if text_part:
+                    await self._send(websocket, {"type": "narration", "content": text_part})
+            return True
+        except Exception as e:
+            print(f"TTS synthesis failed: {e}")
+            return False
+
     async def start_session(self, websocket: WebSocket, initial_message: Optional[dict] = None):
+        # Isolate the Live session client to prevent resource contention with background workers.
+        live_client = genai.Client(**self._client_kwargs)
+
         config = {
             "system_instruction": {
                 "parts": [{
@@ -1268,7 +1192,7 @@ class ChronosAgent:
 ROLE:
 - Speak to the user with natural, cinematic narration.
 - Coordinate specialist worker agents via tool calls:
-  - queue_scene_video(prompt)
+  - queue_scene_image(prompt)
   - switch_music_mood(prompt)
 
 INTERLEAVING RULES:
@@ -1278,7 +1202,8 @@ INTERLEAVING RULES:
 - Never read tool names/prompts aloud.
 
 STYLE:
-- Documentary tone, vivid but concise.
+- Deep, measured, authoritative documentary tone — gravitas of a nature documentary narrator.
+- Speak slowly and deliberately, with weight on key words.
 - Prioritize clarity, momentum, and educational value.
 - For full topic runs, target a 1-2 minute educational experience with progressive depth.""",
                 }],
@@ -1286,18 +1211,24 @@ STYLE:
             "response_modalities": ["AUDIO"],
             "speech_config": {
                 "voice_config": {
-                    "prebuilt_voice_config": {"voice_name": "Aoede"},
+                    "prebuilt_voice_config": {"voice_name": "Charon"},
                 },
             },
             "output_audio_transcription": {},
             "tools": self.live_tools,
-            # Compress old context with a sliding window so long multi-beat
-            # sessions don't hit the context limit and drop the session.
-            "context_window_compression": {"sliding_window": {}},
         }
 
+        self._out_queue = asyncio.Queue()
         try:
-            async with self.client.aio.live.connect(model=self.live_model, config=config) as session:
+            async with live_client.aio.live.connect(model=self.live_model, config=config) as session:
+                active_tasks: Set[asyncio.Task] = set()
+                # Start the background sender task to process the client websocket queue
+                self._spawn_task(
+                    active_tasks,
+                    self._process_websocket_queue(websocket),
+                    "ws-sender",
+                )
+
                 await self._send(
                     websocket,
                     {
@@ -1310,10 +1241,9 @@ STYLE:
                 )
                 await self._send(
                     websocket,
-                    {"type": "status", "content": "Delegator + Script + Video + Music agents ready (video-first mode)"},
+                    {"type": "status", "content": "Delegator + Script + Image + Music agents ready (image-first mode)"},
                 )
 
-                active_tasks: Set[asyncio.Task] = set()
                 seen_call_ids: Set[str] = set()
                 output_transcript_state = ""
                 current_topic = ""
@@ -1356,23 +1286,6 @@ STYLE:
                             await self._send(websocket, payload)
                         return payload
 
-                    async def render_video_for_beat(beat_idx: int, beat: Dict[str, Any]):
-                        """Generate a Veo video for a beat (slow path: 60-180s).
-                        Self-delivers via WebSocket when done — upgrades the image for that beat."""
-                        video_prompt = beat.get("video_prompt") or f"Cinematic shot for {topic}"
-                        payload = await self._render_video_payload(
-                            video_prompt,
-                            websocket=websocket,
-                            status_prefix=f"[Video][Beat {beat_idx + 1}]",
-                        )
-                        if payload:
-                            payload["beat_index"] = beat_idx
-                            await self._send(websocket, payload)
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": f"[Video] Beat {beat_idx + 1} cinematic clip delivered — upgrading scene."},
-                            )
-
                     try:
                         await self._send(websocket, {"type": "status", "content": "[Script Agent] Drafting your narrative arc..."})
                         blueprint = await self.build_story_blueprint(topic)
@@ -1413,11 +1326,7 @@ STYLE:
                             {"type": "status", "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready."},
                         )
 
-                        # ── Phase 1: Fire all image renders immediately (fast, ~10-15s each) ──
-                        # Images are the primary sync element. They arrive before narration starts.
-                        # Veo videos fire in background and silently upgrade each beat's image when ready.
-                        await self._send(websocket, {"type": "status", "content": "[Studio] Pre-rendering all scenes before narration begins..."})
-
+                        # ── Phase 1: Fire media renders (staggered to prevent burst timeouts) ──
                         image_tasks: Dict[int, asyncio.Task] = {}
                         for beat_idx, beat in enumerate(beats):
                             image_tasks[beat_idx] = self._spawn_task(
@@ -1425,14 +1334,8 @@ STYLE:
                                 render_image_for_beat(beat_idx, beat),
                                 f"image-beat-{beat_idx + 1}",
                             )
-
-                        # Veo videos run in background — each self-delivers and upgrades the image
-                        for beat_idx, beat in enumerate(beats):
-                            self._spawn_task(
-                                active_tasks,
-                                render_video_for_beat(beat_idx, beat),
-                                f"video-beat-{beat_idx + 1}",
-                            )
+                            # Stagger each beat's generation to prevent 16+ simultaneous API bursts.
+                            await asyncio.sleep(1.5)
 
                         # BGM fires in background, fallback plays immediately
                         self._spawn_task(
@@ -1477,7 +1380,7 @@ STYLE:
                                         {"type": "status", "content": f"[Studio] Loading scene {beat_index + 1}..."},
                                     )
                                     try:
-                                        async with asyncio.timeout(6):
+                                        async with asyncio.timeout(20):
                                             await asyncio.shield(img_task)
                                     except (asyncio.TimeoutError, asyncio.CancelledError):
                                         pass
@@ -1503,12 +1406,14 @@ STYLE:
                             )
                             turn_complete_event.clear()
                             try:
+                                print(f"[DEBUG] Sending beat {beat_index + 1} prompt to Gemini Live")
                                 await send_turn_input(beat_prompt)
+                                print(f"[DEBUG] Beat {beat_index + 1} prompt sent OK")
                             except Exception as send_err:
                                 print(f"Beat {beat_index + 1} session error: {send_err}")
                                 await self._send(websocket, {"type": "status", "content": f"[Studio] Session interrupted at beat {beat_index + 1} — ending documentary early."})
                                 break
-                            beat_timeout = max(int(beat.get("target_duration_seconds", 15)) + 30, 60)
+                            beat_timeout = max(int(beat.get("target_duration_seconds", 15)) + 60, 90)
                             got_turn = await wait_for_turn_complete(timeout_seconds=beat_timeout)
                             if not got_turn:
                                 await self._send(
@@ -1528,15 +1433,25 @@ STYLE:
                         )
                         quiz_questions = await self.build_quiz(topic, script_content)
                         if quiz_questions:
+                            print(f"[DEBUG] [Quiz Agent] Sending {len(quiz_questions)} questions to client.")
                             await self._send(websocket, {"type": "quiz_data", "questions": quiz_questions, "topic": topic})
-                        await self._send(websocket, {"type": "story_complete"})
+                        else:
+                            print("[DEBUG] [Quiz Agent] No questions generated, even fallback failed.")
+                        
+                        print("[DEBUG] [Studio] Requesting closing reflection from Gemini...")
                         await self._send(
                             websocket,
                             {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."},
                         )
                         turn_complete_event.clear()
                         await send_turn_input(self._build_follow_up_prompt(topic, user_name))
-                        _ = await wait_for_turn_complete(timeout_seconds=60)
+                        
+                        print("[DEBUG] [Studio] Waiting for reflection turn_complete...")
+                        got_reflection = await wait_for_turn_complete(timeout_seconds=60)
+                        print(f"[DEBUG] [Studio] Reflection turn_complete received: {got_reflection}")
+                        
+                        print("[DEBUG] [Studio] Sending story_complete signal to client.")
+                        await self._send(websocket, {"type": "story_complete"})
 
                     except asyncio.CancelledError:
                         await self._send(
@@ -1551,55 +1466,68 @@ STYLE:
                 async def receive_from_gemini():
                     nonlocal output_transcript_state
                     try:
-                        async for message in session.receive():
-                            tool_call = getattr(message, "tool_call", None)
-                            function_calls = getattr(tool_call, "function_calls", None) if tool_call else None
-                            if function_calls:
-                                await self._handle_live_function_calls(
-                                    function_calls=function_calls,
-                                    session=session,
-                                    websocket=websocket,
-                                    task_set=active_tasks,
-                                    seen_call_ids=seen_call_ids,
-                                    send_lock=session_send_lock,
-                                )
-
-                            server_content = message.server_content
-                            if not server_content:
-                                continue
-
-                            if server_content.model_turn:
-                                for part in server_content.model_turn.parts:
-                                    inline_data = getattr(part, "inline_data", None)
-                                    if inline_data and inline_data.data:
-                                        await self._send(
-                                            websocket,
-                                            {
-                                                "type": "audio_chunk",
-                                                "data": base64.b64encode(inline_data.data).decode("utf-8"),
-                                            },
+                        while True:
+                            async for message in session.receive():
+                                try:
+                                    tool_call = getattr(message, "tool_call", None)
+                                    function_calls = getattr(tool_call, "function_calls", None) if tool_call else None
+                                    if function_calls:
+                                        await self._handle_live_function_calls(
+                                            function_calls=function_calls,
+                                            session=session,
+                                            websocket=websocket,
+                                            task_set=active_tasks,
+                                            seen_call_ids=seen_call_ids,
+                                            send_lock=None,
                                         )
-                                    text_part = getattr(part, "text", None)
-                                    if text_part and text_part.strip():
-                                        await self._send(websocket, {"type": "narration", "content": text_part})
 
-                            output_transcription = getattr(server_content, "output_transcription", None)
-                            transcript_text = getattr(output_transcription, "text", None) if output_transcription else None
-                            if transcript_text:
-                                delta_text = transcript_text
-                                if output_transcript_state and transcript_text.startswith(output_transcript_state):
-                                    delta_text = transcript_text[len(output_transcript_state):]
-                                output_transcript_state = transcript_text
-                                if delta_text.strip():
-                                    await self._send(websocket, {"type": "narration", "content": delta_text})
+                                    server_content = message.server_content
+                                    if not server_content:
+                                        continue
 
-                            if server_content.turn_complete:
-                                turn_complete_event.set()
-                                output_transcript_state = ""
+                                    if server_content.model_turn:
+                                        for part in server_content.model_turn.parts:
+                                            inline_data = getattr(part, "inline_data", None)
+                                            if inline_data and inline_data.data:
+                                                b64_data = await asyncio.to_thread(base64.b64encode, inline_data.data)
+                                                await self._send(
+                                                    websocket,
+                                                    {
+                                                        "type": "audio_chunk",
+                                                        "data": b64_data.decode("utf-8"),
+                                                    },
+                                                )
+                                            text_part = getattr(part, "text", None)
+                                            if text_part and text_part.strip():
+                                                await self._send(websocket, {"type": "narration", "content": text_part})
+
+                                    output_transcription = getattr(server_content, "output_transcription", None)
+                                    transcript_text = getattr(output_transcription, "text", None) if output_transcription else None
+                                    if transcript_text:
+                                        delta_text = transcript_text
+                                        if output_transcript_state and transcript_text.startswith(output_transcript_state):
+                                            delta_text = transcript_text[len(output_transcript_state):]
+                                        output_transcript_state = transcript_text
+                                        if delta_text.strip():
+                                            await self._send(websocket, {"type": "narration", "content": delta_text})
+
+                                    if server_content.turn_complete:
+                                        print(f"[DEBUG] turn_complete received from Gemini")
+                                        turn_complete_event.set()
+                                        output_transcript_state = ""
+                                except asyncio.CancelledError:
+                                    raise
+                                except Exception as e:
+                                    print(f"Error processing Gemini message: {type(e).__name__}: {e}")
+                                    turn_complete_event.set()
+                    except asyncio.CancelledError:
+                        pass
                     except Exception as e:
-                        print(f"Error in Gemini receive loop: {e}")
+                        print(f"Gemini receive loop fatal error: {e}")
                         await self._send_error(websocket, f"Live stream receive error: {e}")
-                        turn_complete_event.set()  # Unblock any beat waiting for turn completion
+                        turn_complete_event.set()
+                    finally:
+                        print(f"[DEBUG] receive_from_gemini loop exited")
 
                 receive_task = asyncio.create_task(receive_from_gemini())
 
@@ -1620,16 +1548,12 @@ STYLE:
                                 await self._send_error(websocket, "Invalid JSON message from client.")
                                 continue
 
-                        msg_type = msg.get("type")
-                        if msg_type == "start":
-                            topic = str(msg.get("topic", "")).strip()
+                        if msg.get("type") == "start":
+                            topic = str(msg.get("topic") or "").strip()
+                            user_name = str(msg.get("name") or "").strip()
                             if not topic:
-                                await self._send_error(websocket, "Topic cannot be empty.")
+                                await self._send_error(websocket, "Missing topic.")
                                 continue
-                            user_name = str(msg.get("name", "")).strip()
-
-                            current_topic = topic
-                            current_user_name = user_name
 
                             if story_task and not story_task.done():
                                 story_task.cancel()
@@ -1656,13 +1580,17 @@ STYLE:
                             await task
         except TimeoutError as e:
             print(f"Timeout connecting to Gemini Live API: {e}")
-            await self._send_error(
-                websocket,
-                "Failed to connect to Vertex Gemini Live API. Check network, region, model access, and ADC permissions.",
-            )
+            await self._send(websocket, {"type": "status", "content": "Gemini Live unavailable — switching to TTS fallback mode."})
+            await self._run_tts_fallback_session(websocket, initial_message)
         except Exception as e:
             print(f"Error in live session: {e}")
-            await self._send_error(websocket, f"Session error: {str(e)}")
+            if any(k in str(e).lower() for k in ("model", "not found", "permission", "quota", "unavailable", "403", "404", "429")):
+                await self._send(websocket, {"type": "status", "content": f"Gemini Live error ({type(e).__name__}) — switching to TTS fallback."})
+                await self._run_tts_fallback_session(websocket, initial_message)
+            else:
+                await self._send_error(websocket, f"Session error: {str(e)}")
+        finally:
+            self._out_queue = None
 
 
 # Resolve server-side credentials from env (may all be None if not configured).
@@ -1694,28 +1622,14 @@ async def websocket_endpoint(websocket: WebSocket):
     client_api_key = str(first_msg.get("apiKey", "")).strip() or None
     effective_api_key = client_api_key or VERTEX_API_KEY
 
-    if not effective_api_key and not PROJECT_ID:
-        await websocket.send_text(json.dumps({
-            "type": "error",
-            "content": "No API key provided. Enter your Gemini API key in the UI.",
-        }))
-        return
-
-    conn_agent = ChronosAgent(
-        project_id=None if (effective_api_key and not PROJECT_ID) else PROJECT_ID,
-        location=LOCATION or "us-central1",
-        video_output_gcs_uri=os.getenv("VEO_OUTPUT_GCS_URI"),
+    agent = ChronosAgent(
+        project_id=PROJECT_ID,
+        location=LOCATION,
         api_key=effective_api_key,
     )
-    await conn_agent.start_session(websocket, initial_message=first_msg)
+    await agent.start_session(websocket, initial_message=first_msg)
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        ws="websockets-sansio",
-        ws_ping_interval=None,
-        ws_ping_timeout=None,
-    )
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

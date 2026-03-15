@@ -63,8 +63,8 @@ def create_vertex_client(
                 "VERTEX_AUTH_MODE=api_key requires GOOGLE_CLOUD_API_KEY, "
                 "VERTEX_API_KEY, or GOOGLE_API_KEY."
             )
-        client_kwargs["api_key"] = api_key
-        return genai.Client(**client_kwargs)
+        # API-key mode uses the standard Gemini endpoint, not Vertex AI.
+        return genai.Client(api_key=api_key)
 
     if not project_id and not api_key:
         raise RuntimeError(
@@ -72,9 +72,8 @@ def create_vertex_client(
         )
 
     # Auto mode prefers API key when available, then falls back to project mode.
-    if api_key:
-        client_kwargs["api_key"] = api_key
-        return genai.Client(**client_kwargs)
+    if api_key and not project_id:
+        return genai.Client(api_key=api_key)
 
     if not location:
         location = "us-central1"
