@@ -64,7 +64,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         if not api_key:
             raise RuntimeError("VERTEX_AUTH_MODE='api_key' requires GOOGLE_API_KEY.")
         if not location:
-            location = "global"
+            location = "us-central1"
         return None, location, api_key
 
     # Auto mode prefers project auth for full Live + media functionality.
@@ -74,7 +74,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         return project_id, location, None
 
     if not location:
-        location = "global"
+        location = "us-central1"
     return None, location, api_key
 
 
@@ -112,10 +112,15 @@ class ChronosAgent:
         self.auth_mode = "express_api_key" if api_key and not project_id else "adc"
         
         client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1alpha"}}
-        
-        # If we have an API key (regardless of auth_mode), use standard Gemini API endpoint.
+
         if api_key:
+            # Vertex AI Express mode: API key + vertexai=True routes to the Vertex AI
+            # endpoint so the paid-account quota is respected. Without vertexai=True the
+            # SDK falls back to the AI Studio endpoint which applies free-tier rate limits.
             client_kwargs["api_key"] = api_key
+            client_kwargs["vertexai"] = True
+            if location:
+                client_kwargs["location"] = location
         else:
             # Standard Vertex AI Project mode (ADC)
             client_kwargs["vertexai"] = True
@@ -845,8 +850,15 @@ class ChronosAgent:
                 is_quota = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
                 print(f"Image generation error (attempt {attempt + 1}/{max_attempts}): {e}")
                 if is_quota:
-                    await self._send(websocket, {"type": "status", "content": f"{status_prefix} Imagen quota exhausted. Skipping visual for this beat."})
-                    return None
+                    if attempt < max_attempts - 1:
+                        backoff = 10 * (2 ** attempt)  # 10s, 20s, 40s
+                        await self._send(websocket, {"type": "status", "content": f"{status_prefix} Quota limit hit, retrying in {backoff}s... (attempt {attempt + 1}/{max_attempts})"})
+                        await asyncio.sleep(backoff)
+                    else:
+                        await self._send(websocket, {"type": "status", "content": f"{status_prefix} Imagen quota exhausted after {max_attempts} attempts. Skipping visual for this beat."})
+                        return None
+                elif attempt < max_attempts - 1:
+                    await asyncio.sleep(2 ** attempt)
         return None
 
     async def _send_image_payload(
@@ -1438,20 +1450,23 @@ STYLE:
                         else:
                             print("[DEBUG] [Quiz Agent] No questions generated, even fallback failed.")
                         
-                        print("[DEBUG] [Studio] Requesting closing reflection from Gemini...")
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."},
-                        )
-                        turn_complete_event.clear()
-                        await send_turn_input(self._build_follow_up_prompt(topic, user_name))
-                        
-                        print("[DEBUG] [Studio] Waiting for reflection turn_complete...")
-                        got_reflection = await wait_for_turn_complete(timeout_seconds=60)
-                        print(f"[DEBUG] [Studio] Reflection turn_complete received: {got_reflection}")
-                        
-                        print("[DEBUG] [Studio] Sending story_complete signal to client.")
-                        await self._send(websocket, {"type": "story_complete"})
+                        try:
+                            print("[DEBUG] [Studio] Requesting closing reflection from Gemini...")
+                            await self._send(
+                                websocket,
+                                {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."},
+                            )
+                            turn_complete_event.clear()
+                            await send_turn_input(self._build_follow_up_prompt(topic, user_name))
+
+                            print("[DEBUG] [Studio] Waiting for reflection turn_complete...")
+                            got_reflection = await wait_for_turn_complete(timeout_seconds=60)
+                            print(f"[DEBUG] [Studio] Reflection turn_complete received: {got_reflection}")
+                        except Exception as reflection_err:
+                            print(f"[DEBUG] [Studio] Closing reflection failed (non-fatal): {reflection_err}")
+                        finally:
+                            print("[DEBUG] [Studio] Sending story_complete signal to client.")
+                            await self._send(websocket, {"type": "story_complete"})
 
                     except asyncio.CancelledError:
                         await self._send(
