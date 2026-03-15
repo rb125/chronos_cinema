@@ -64,7 +64,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         if not api_key:
             raise RuntimeError("VERTEX_AUTH_MODE='api_key' requires GOOGLE_API_KEY.")
         if not location:
-            location = "global"
+            location = "us-central1"
         return None, location, api_key
 
     # Auto mode prefers project auth for full Live + media functionality.
@@ -74,7 +74,7 @@ def _resolve_vertex_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         return project_id, location, None
 
     if not location:
-        location = "global"
+        location = "us-central1"
     return None, location, api_key
 
 
@@ -112,10 +112,15 @@ class ChronosAgent:
         self.auth_mode = "express_api_key" if api_key and not project_id else "adc"
         
         client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1alpha"}}
-        
-        # If we have an API key (regardless of auth_mode), use standard Gemini API endpoint.
+
         if api_key:
+            # Vertex AI Express mode: API key + vertexai=True routes to the Vertex AI
+            # endpoint so the paid-account quota is respected. Without vertexai=True the
+            # SDK falls back to the AI Studio endpoint which applies free-tier rate limits.
             client_kwargs["api_key"] = api_key
+            client_kwargs["vertexai"] = True
+            if location:
+                client_kwargs["location"] = location
         else:
             # Standard Vertex AI Project mode (ADC)
             client_kwargs["vertexai"] = True
