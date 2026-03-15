@@ -114,13 +114,13 @@ class ChronosAgent:
         client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1alpha"}}
 
         if api_key:
-            # Vertex AI Express mode: API key + vertexai=True routes to the Vertex AI
+            # Vertex AI Express mode: api_key + vertexai=True routes to the Vertex AI
             # endpoint so the paid-account quota is respected. Without vertexai=True the
-            # SDK falls back to the AI Studio endpoint which applies free-tier rate limits.
+            # SDK hits the AI Studio endpoint which applies free-tier rate limits.
+            # NOTE: the SDK rejects location when api_key is set ("mutually exclusive"),
+            # so we omit it here; the express endpoint resolves the region from the key.
             client_kwargs["api_key"] = api_key
             client_kwargs["vertexai"] = True
-            if location:
-                client_kwargs["location"] = location
         else:
             # Standard Vertex AI Project mode (ADC)
             client_kwargs["vertexai"] = True
