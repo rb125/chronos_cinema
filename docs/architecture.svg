@@ -1,181 +1,164 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" font-family="system-ui, -apple-system, sans-serif">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#06060f"/>
-      <stop offset="100%" stop-color="#0d0d1a"/>
-    </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#d4a843"/>
-      <stop offset="100%" stop-color="#f0c060"/>
-    </linearGradient>
-    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7c3aed"/>
-      <stop offset="100%" stop-color="#a855f7"/>
-    </linearGradient>
-    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0891b2"/>
-      <stop offset="100%" stop-color="#22d3ee"/>
-    </linearGradient>
-    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#059669"/>
-      <stop offset="100%" stop-color="#34d399"/>
-    </linearGradient>
-    <marker id="arrowGold" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#d4a843" opacity="0.8"/>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/>
     </marker>
-    <marker id="arrowMuted" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#4b5563" opacity="0.8"/>
+    <marker id="arrow-gold" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b"/>
     </marker>
-    <marker id="arrowCyan" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" opacity="0.8"/>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#10b981"/>
     </marker>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
 
   <!-- Background -->
-  <rect width="960" height="620" fill="url(#bg)"/>
-  <rect width="960" height="620" fill="none" stroke="#1f2937" stroke-width="1"/>
+  <rect width="960" height="620" fill="#0a0a1a"/>
 
   <!-- Title -->
-  <text x="480" y="38" text-anchor="middle" fill="url(#gold)" font-size="18" font-weight="700" letter-spacing="3" filter="url(#glow)">CHRONOS CINEMA — SYSTEM ARCHITECTURE</text>
-  <line x1="200" y1="50" x2="760" y2="50" stroke="#d4a843" stroke-width="0.5" opacity="0.4"/>
+  <text x="480" y="38" text-anchor="middle" fill="#f0eeff" font-size="20" font-weight="700" letter-spacing="-0.5">Chronos Cinema - System Architecture</text>
 
-  <!-- ── COLUMN 1: User Browser ── -->
-  <rect x="30" y="220" width="130" height="90" rx="12" fill="#111827" stroke="#374151" stroke-width="1.5"/>
-  <text x="95" y="248" text-anchor="middle" fill="#9ca3af" font-size="9" letter-spacing="1.5">USER</text>
-  <text x="95" y="268" text-anchor="middle" fill="#f9fafb" font-size="13" font-weight="600">Browser</text>
-  <text x="95" y="285" text-anchor="middle" fill="#6b7280" font-size="9">Chrome / Edge / Safari</text>
-  <text x="95" y="300" text-anchor="middle" fill="#6b7280" font-size="9">Web Audio API · Mic</text>
+  <!-- ── FRONTEND box ── -->
+  <rect x="30" y="70" width="200" height="480" rx="12" fill="#0f0f2e" stroke="#3730a3" stroke-width="1.5"/>
+  <text x="130" y="95" text-anchor="middle" fill="#818cf8" font-size="11" font-weight="700" letter-spacing="1">BROWSER / FRONTEND</text>
+  <text x="130" y="110" text-anchor="middle" fill="#6366f1" font-size="9">Next.js 14 + Tailwind CSS</text>
 
-  <!-- ── COLUMN 2: Next.js Frontend ── -->
-  <rect x="215" y="180" width="160" height="170" rx="12" fill="#0f172a" stroke="#7c3aed" stroke-width="1.5"/>
-  <rect x="215" y="180" width="160" height="32" rx="12" fill="#7c3aed" opacity="0.2"/>
-  <rect x="215" y="200" width="160" height="12" fill="#7c3aed" opacity="0.2"/>
-  <text x="295" y="201" text-anchor="middle" fill="#a78bfa" font-size="9" letter-spacing="1.5">FRONTEND</text>
-  <text x="295" y="222" text-anchor="middle" fill="#f9fafb" font-size="13" font-weight="600">Next.js 14</text>
-  <text x="295" y="242" text-anchor="middle" fill="#6b7280" font-size="9">localhost:3000</text>
-  <line x1="225" y1="254" x2="365" y2="254" stroke="#374151" stroke-width="0.5"/>
-  <text x="295" y="270" text-anchor="middle" fill="#9ca3af" font-size="9">Web Audio API (PCM)</text>
-  <text x="295" y="285" text-anchor="middle" fill="#9ca3af" font-size="9">IndexedDB (replay)</text>
-  <text x="295" y="300" text-anchor="middle" fill="#9ca3af" font-size="9">Ken Burns animations</text>
-  <text x="295" y="315" text-anchor="middle" fill="#9ca3af" font-size="9">Quiz · CC · Theater mode</text>
-  <text x="295" y="330" text-anchor="middle" fill="#9ca3af" font-size="9">Tailwind CSS dark UI</text>
+  <rect x="50" y="122" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="136" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">Cinema Player</text>
+  <text x="130" y="150" text-anchor="middle" fill="#818cf8" font-size="9">Ken Burns - Beat progress</text>
 
-  <!-- ── COLUMN 3: FastAPI Backend ── -->
-  <rect x="430" y="180" width="160" height="170" rx="12" fill="#0f172a" stroke="#0891b2" stroke-width="1.5"/>
-  <rect x="430" y="180" width="160" height="32" rx="12" fill="#0891b2" opacity="0.2"/>
-  <rect x="430" y="200" width="160" height="12" fill="#0891b2" opacity="0.2"/>
-  <text x="510" y="201" text-anchor="middle" fill="#67e8f9" font-size="9" letter-spacing="1.5">BACKEND</text>
-  <text x="510" y="222" text-anchor="middle" fill="#f9fafb" font-size="13" font-weight="600">FastAPI + Python</text>
-  <text x="510" y="242" text-anchor="middle" fill="#6b7280" font-size="9">:8000 / Cloud Run</text>
-  <line x1="440" y1="254" x2="580" y2="254" stroke="#374151" stroke-width="0.5"/>
-  <text x="510" y="270" text-anchor="middle" fill="#9ca3af" font-size="9">ChronosAgent (per-conn)</text>
-  <text x="510" y="285" text-anchor="middle" fill="#9ca3af" font-size="9">Script · Image · Video workers</text>
-  <text x="510" y="300" text-anchor="middle" fill="#9ca3af" font-size="9">Music · Quiz generators</text>
-  <text x="510" y="315" text-anchor="middle" fill="#9ca3af" font-size="9">Async semaphore pool</text>
-  <text x="510" y="330" text-anchor="middle" fill="#9ca3af" font-size="9">WS heartbeat (25 s ping)</text>
+  <rect x="50" y="168" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="182" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">Audio Engine</text>
+  <text x="130" y="196" text-anchor="middle" fill="#818cf8" font-size="9">Web Audio API - PCM scheduler</text>
 
-  <!-- ── COLUMN 4: Vertex AI ── -->
-  <rect x="645" y="80" width="280" height="380" rx="14" fill="#0a0a18" stroke="#d4a843" stroke-width="1.5" stroke-dasharray="6,3"/>
-  <text x="785" y="105" text-anchor="middle" fill="#d4a843" font-size="11" font-weight="700" letter-spacing="2">VERTEX AI</text>
-  <text x="785" y="121" text-anchor="middle" fill="#92400e" font-size="9">Google Cloud Platform</text>
+  <rect x="50" y="214" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="228" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">BGM Engine</text>
+  <text x="130" y="242" text-anchor="middle" fill="#818cf8" font-size="9">GainNode - auto-duck / restore</text>
+
+  <rect x="50" y="260" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="274" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">Subtitle Overlay</text>
+  <text x="130" y="288" text-anchor="middle" fill="#818cf8" font-size="9">Live closed captions</text>
+
+  <rect x="50" y="306" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="320" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">Quiz View</text>
+  <text x="130" y="334" text-anchor="middle" fill="#818cf8" font-size="9">5 MCQs - scoring - explanations</text>
+
+  <rect x="50" y="352" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="366" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">Session History</text>
+  <text x="130" y="380" text-anchor="middle" fill="#818cf8" font-size="9">IndexedDB - offline replay</text>
+
+  <rect x="50" y="398" width="160" height="36" rx="6" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="130" y="412" text-anchor="middle" fill="#c7d2fe" font-size="10" font-weight="600">WebSocket Client</text>
+  <text x="130" y="426" text-anchor="middle" fill="#818cf8" font-size="9">ws://backend:8000/ws</text>
+
+  <!-- ── BACKEND box ── -->
+  <rect x="290" y="70" width="220" height="480" rx="12" fill="#0f1f0f" stroke="#166534" stroke-width="1.5"/>
+  <text x="400" y="95" text-anchor="middle" fill="#4ade80" font-size="11" font-weight="700" letter-spacing="1">BACKEND</text>
+  <text x="400" y="110" text-anchor="middle" fill="#22c55e" font-size="9">FastAPI + Python - WebSocket</text>
+
+  <rect x="308" y="122" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="136" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">WebSocket Endpoint /ws</text>
+  <text x="400" y="150" text-anchor="middle" fill="#4ade80" font-size="9">per-connection ChronosAgent</text>
+
+  <rect x="308" y="168" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="182" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Script Worker</text>
+  <text x="400" y="196" text-anchor="middle" fill="#4ade80" font-size="9">4-beat blueprint - JSON schema</text>
+
+  <rect x="308" y="214" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="228" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Image Workers ×4</text>
+  <text x="400" y="242" text-anchor="middle" fill="#4ade80" font-size="9">parallel - semaphore-limited</text>
+
+  <rect x="308" y="260" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="274" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Music Worker</text>
+  <text x="400" y="288" text-anchor="middle" fill="#4ade80" font-size="9">concurrent - fallback oscillator</text>
+
+  <rect x="308" y="306" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="320" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Quiz Worker</text>
+  <text x="400" y="334" text-anchor="middle" fill="#4ade80" font-size="9">concurrent with reflection beat</text>
+
+  <rect x="308" y="352" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="366" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">WS Output Queue</text>
+  <text x="400" y="380" text-anchor="middle" fill="#4ade80" font-size="9">asyncio.Queue - serial sender</text>
+
+  <rect x="308" y="398" width="184" height="36" rx="6" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="400" y="412" text-anchor="middle" fill="#86efac" font-size="10" font-weight="600">Live Keepalive Loop</text>
+  <text x="400" y="426" text-anchor="middle" fill="#4ade80" font-size="9">ping every 5s during image wait</text>
+
+  <!-- ── VERTEX AI box ── -->
+  <rect x="570" y="70" width="360" height="480" rx="12" fill="#1a0f0f" stroke="#9a3412" stroke-width="1.5"/>
+  <text x="750" y="95" text-anchor="middle" fill="#fb923c" font-size="11" font-weight="700" letter-spacing="1">VERTEX AI  -  GCP</text>
+  <text x="750" y="110" text-anchor="middle" fill="#f97316" font-size="9">project: us-central1-aiplatform.googleapis.com</text>
 
   <!-- Gemini Live -->
-  <rect x="660" y="132" width="250" height="58" rx="8" fill="#1a0a2e" stroke="#7c3aed" stroke-width="1"/>
-  <text x="685" y="153" fill="#a78bfa" font-size="9" font-weight="700">🎙  GEMINI LIVE 2.5 FLASH</text>
-  <text x="685" y="168" fill="#6b7280" font-size="8">gemini-live-2.5-flash-native-audio</text>
-  <text x="685" y="181" fill="#9ca3af" font-size="8">Streams audio + text · barge-in interrupts</text>
+  <rect x="588" y="122" width="324" height="60" rx="6" fill="#2d1515" stroke="#c2410c" stroke-width="1"/>
+  <text x="750" y="140" text-anchor="middle" fill="#fed7aa" font-size="10" font-weight="700">Gemini Live  -  v1beta1</text>
+  <text x="750" y="155" text-anchor="middle" fill="#fb923c" font-size="9">gemini-live-2.5-flash-native-audio</text>
+  <text x="750" y="170" text-anchor="middle" fill="#9a3412" font-size="8">BidiGenerateContent WebSocket - PCM audio + transcription</text>
 
-  <!-- Script/Quiz Gemini -->
-  <rect x="660" y="200" width="250" height="58" rx="8" fill="#0a1a1a" stroke="#0891b2" stroke-width="1"/>
-  <text x="685" y="221" fill="#67e8f9" font-size="9" font-weight="700">📝  GEMINI 2.5 FLASH</text>
-  <text x="685" y="236" fill="#6b7280" font-size="8">gemini-2.5-flash</text>
-  <text x="685" y="249" fill="#9ca3af" font-size="8">Script blueprint · 5-question quiz</text>
+  <!-- Gemini Flash script -->
+  <rect x="588" y="196" width="152" height="60" rx="6" fill="#2d1515" stroke="#c2410c" stroke-width="1"/>
+  <text x="664" y="214" text-anchor="middle" fill="#fed7aa" font-size="10" font-weight="700">Gemini 2.5 Flash  -  v1</text>
+  <text x="664" y="229" text-anchor="middle" fill="#fb923c" font-size="9">generateContent</text>
+  <text x="664" y="244" text-anchor="middle" fill="#9a3412" font-size="8">Script blueprint + Quiz</text>
 
-  <!-- Veo -->
-  <rect x="660" y="268" width="250" height="58" rx="8" fill="#0a1a10" stroke="#059669" stroke-width="1"/>
-  <text x="685" y="289" fill="#34d399" font-size="9" font-weight="700">🎥  VEO 3.1</text>
-  <text x="685" y="304" fill="#6b7280" font-size="8">veo-3.1-generate-001</text>
-  <text x="685" y="317" fill="#9ca3af" font-size="8">Cinematic clips · 60–180 s · GCS output</text>
-
-  <!-- Imagen -->
-  <rect x="660" y="336" width="250" height="58" rx="8" fill="#1a100a" stroke="#d97706" stroke-width="1"/>
-  <text x="685" y="357" fill="#fbbf24" font-size="9" font-weight="700">🖼  IMAGEN 4.0 FAST</text>
-  <text x="685" y="372" fill="#6b7280" font-size="8">imagen-4.0-fast-generate-001</text>
-  <text x="685" y="385" fill="#9ca3af" font-size="8">Scene stills · parallel pre-render · ~12 s</text>
+  <!-- Gemini Image -->
+  <rect x="752" y="196" width="160" height="60" rx="6" fill="#2d1515" stroke="#c2410c" stroke-width="1"/>
+  <text x="832" y="214" text-anchor="middle" fill="#fed7aa" font-size="10" font-weight="700">Gemini Flash Image  -  v1</text>
+  <text x="832" y="229" text-anchor="middle" fill="#fb923c" font-size="9">generateContent/IMAGE</text>
+  <text x="832" y="244" text-anchor="middle" fill="#9a3412" font-size="8">gemini-2.5-flash-image</text>
 
   <!-- Lyria -->
-  <rect x="660" y="404" width="120" height="44" rx="8" fill="#1a0a10" stroke="#ec4899" stroke-width="1"/>
-  <text x="720" y="422" text-anchor="middle" fill="#f9a8d4" font-size="9" font-weight="700">🎵 LYRIA</text>
-  <text x="720" y="436" text-anchor="middle" fill="#6b7280" font-size="8">lyria-002</text>
+  <rect x="588" y="270" width="324" height="60" rx="6" fill="#2d1515" stroke="#c2410c" stroke-width="1"/>
+  <text x="750" y="288" text-anchor="middle" fill="#fed7aa" font-size="10" font-weight="700">Lyria 002  -  v1</text>
+  <text x="750" y="303" text-anchor="middle" fill="#fb923c" font-size="9">publishers/google/models/lyria-002:predict</text>
+  <text x="750" y="318" text-anchor="middle" fill="#9a3412" font-size="8">REST - ADC bearer token - WAV response</text>
 
-  <!-- Cloud Storage -->
-  <rect x="790" y="404" width="120" height="44" rx="8" fill="#0a1218" stroke="#4b5563" stroke-width="1"/>
-  <text x="850" y="422" text-anchor="middle" fill="#9ca3af" font-size="9" font-weight="700">☁  Cloud Storage</text>
-  <text x="850" y="436" text-anchor="middle" fill="#6b7280" font-size="8">Veo output (gs://)</text>
+  <!-- ADC note -->
+  <rect x="588" y="344" width="324" height="40" rx="6" fill="#1a1a0a" stroke="#713f12" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="750" y="360" text-anchor="middle" fill="#fbbf24" font-size="9" font-weight="600">Auth: Application Default Credentials (ADC)</text>
+  <text x="750" y="375" text-anchor="middle" fill="#92400e" font-size="8">gcloud auth application-default login - quota-project set</text>
 
-  <!-- ── Cloud Run badge ── -->
-  <rect x="430" y="390" width="160" height="34" rx="8" fill="#0a1218" stroke="#4b5563" stroke-width="1"/>
-  <text x="510" y="411" text-anchor="middle" fill="#9ca3af" font-size="9" font-weight="700">☁  Cloud Run</text>
-  <text x="510" y="423" text-anchor="middle" fill="#6b7280" font-size="8">deploy_cloud_run.sh · auto-scales</text>
+  <!-- API versions note -->
+  <rect x="588" y="398" width="324" height="50" rx="6" fill="#1a1a0a" stroke="#713f12" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="750" y="416" text-anchor="middle" fill="#fbbf24" font-size="9" font-weight="600">Isolated Clients (version conflict fix)</text>
+  <text x="750" y="431" text-anchor="middle" fill="#92400e" font-size="8">generate_content → v1 client</text>
+  <text x="750" y="445" text-anchor="middle" fill="#92400e" font-size="8">Gemini Live WebSocket → v1beta1 client</text>
 
-  <!-- ── ARROWS ── -->
+  <!-- ── ARROWS: Frontend ↔ Backend ── -->
+  <!-- WS bidirectional -->
+  <line x1="230" y1="415" x2="288" y2="415" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="290" y1="408" x2="232" y2="408" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="260" y="403" text-anchor="middle" fill="#818cf8" font-size="8">WebSocket</text>
+  <text x="260" y="425" text-anchor="middle" fill="#818cf8" font-size="8">JSON frames</text>
 
-  <!-- User → Frontend: WebSocket -->
-  <line x1="160" y1="265" x2="213" y2="265" stroke="#d4a843" stroke-width="1.5" marker-end="url(#arrowGold)"/>
-  <text x="186" y="258" text-anchor="middle" fill="#d4a843" font-size="8">WS</text>
-  <!-- return arrow -->
-  <line x1="213" y1="275" x2="160" y2="275" stroke="#d4a843" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowGold)"/>
+  <!-- ── ARROWS: Backend → Vertex AI ── -->
+  <!-- Live -->
+  <line x1="512" y1="152" x2="566" y2="152" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <text x="539" y="147" text-anchor="middle" fill="#fbbf24" font-size="8">WSS</text>
 
-  <!-- Frontend ↔ Backend: WebSocket /ws -->
-  <line x1="375" y1="255" x2="428" y2="255" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
-  <text x="400" y="248" text-anchor="middle" fill="#22d3ee" font-size="8">WS /ws</text>
-  <line x1="428" y1="268" x2="375" y2="268" stroke="#22d3ee" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowCyan)"/>
-  <text x="400" y="282" text-anchor="middle" fill="#22d3ee" font-size="8">audio·video·quiz</text>
+  <!-- Script/Quiz -->
+  <line x1="512" y1="226" x2="586" y2="226" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <text x="549" y="221" text-anchor="middle" fill="#fbbf24" font-size="8">HTTPS</text>
 
-  <!-- Backend → Gemini Live -->
-  <line x1="590" y1="220" x2="658" y2="200" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+  <!-- Image -->
+  <line x1="512" y1="242" x2="750" y2="242" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
 
-  <!-- Backend → Gemini Script -->
-  <line x1="590" y1="240" x2="658" y2="240" stroke="#0891b2" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+  <!-- Lyria -->
+  <line x1="512" y1="300" x2="586" y2="300" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <text x="549" y="295" text-anchor="middle" fill="#fbbf24" font-size="8">REST</text>
 
-  <!-- Backend → Veo -->
-  <line x1="590" y1="255" x2="658" y2="290" stroke="#059669" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+  <!-- ── DATA FLOW labels on right side ── -->
+  <text x="480" y="575" text-anchor="middle" fill="#4b5563" font-size="9">audio_chunk - image - bgm_audio - narration - quiz_data - beat_start - story_complete</text>
+  <text x="480" y="590" text-anchor="middle" fill="#374151" font-size="8">← all streamed over a single WebSocket connection as JSON frames →</text>
 
-  <!-- Backend → Imagen -->
-  <line x1="590" y1="265" x2="658" y2="355" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrowGold)"/>
-
-  <!-- Backend → Lyria -->
-  <line x1="590" y1="275" x2="658" y2="420" stroke="#ec4899" stroke-width="1.2" marker-end="url(#arrowGold)"/>
-
-  <!-- Veo → Cloud Storage -->
-  <line x1="785" y1="416" x2="790" y2="420" stroke="#4b5563" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowMuted)"/>
-
-  <!-- Backend → Cloud Run (deploy arrow) -->
-  <line x1="510" y1="350" x2="510" y2="388" stroke="#4b5563" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowMuted)"/>
-
-  <!-- ── LEGEND / FLOW NOTES ── -->
-  <rect x="30" y="470" width="570" height="120" rx="10" fill="#0f172a" stroke="#1f2937" stroke-width="1"/>
-  <text x="50" y="491" fill="#9ca3af" font-size="9" font-weight="700" letter-spacing="1">DATA FLOW</text>
-
-  <circle cx="50" cy="510" r="4" fill="#7c3aed"/>
-  <text x="60" y="514" fill="#9ca3af" font-size="9">① User enters topic + API key → browser opens WebSocket to backend</text>
-
-  <circle cx="50" cy="528" r="4" fill="#0891b2"/>
-  <text x="60" y="532" fill="#9ca3af" font-size="9">② Backend generates 8-beat script via Gemini 2.5 Flash, fires parallel image + video renders</text>
-
-  <circle cx="50" cy="546" r="4" fill="#d97706"/>
-  <text x="60" y="550" fill="#9ca3af" font-size="9">③ Imagen stills (~12 s) arrive first → frontend shows scene + starts narration via Gemini Live</text>
-
-  <circle cx="50" cy="564" r="4" fill="#059669"/>
-  <text x="60" y="568" fill="#9ca3af" font-size="9">④ Veo cinematic clips (60–180 s) silently upgrade each scene via Cloud Storage GCS download</text>
-
-  <circle cx="50" cy="582" r="4" fill="#ec4899"/>
-  <text x="60" y="586" fill="#9ca3af" font-size="9">⑤ Lyria scores background music; auto-ducks under narration. Quiz generated after final beat.</text>
-
-  <!-- Version/Date tag -->
-  <text x="930" y="610" text-anchor="end" fill="#374151" font-size="8">Chronos Cinema · Gemini Hackathon 2025</text>
+  <!-- Legend -->
+  <line x1="60" y1="555" x2="90" y2="555" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="95" y="559" fill="#818cf8" font-size="9">WebSocket (browser ↔ backend)</text>
+  <line x1="260" y1="555" x2="290" y2="555" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow-gold)"/>
+  <text x="295" y="559" fill="#fbbf24" font-size="9">Vertex AI API call</text>
+  <rect x="430" y="548" width="10" height="10" rx="2" fill="#1e1b4b" stroke="#4338ca" stroke-width="1"/>
+  <text x="445" y="558" fill="#818cf8" font-size="9">Frontend component</text>
+  <rect x="580" y="548" width="10" height="10" rx="2" fill="#052e16" stroke="#166534" stroke-width="1"/>
+  <text x="595" y="558" fill="#4ade80" font-size="9">Backend worker</text>
+  <rect x="720" y="548" width="10" height="10" rx="2" fill="#2d1515" stroke="#c2410c" stroke-width="1"/>
+  <text x="735" y="558" fill="#fb923c" font-size="9">GCP / Vertex AI model</text>
 </svg>

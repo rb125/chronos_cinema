@@ -118,6 +118,7 @@ export default function ChronosCinema() {
   const historyIdRef = useRef("");
   const currentTopicRef = useRef("");
   const sessionSavedRef = useRef(false);
+  const lastAudioChunkAt = useRef(0);
 
   // Refs — replay control
   const isReplayRef = useRef(false);
@@ -214,11 +215,16 @@ export default function ChronosCinema() {
   }, []);
 
   const applyVisual = useCallback((visual: Visual) => {
+    console.log(`[DEBUG] applyVisual beat=${visual.beatIndex} type=${visual.type} currentBeat=${currentBeatRef.current}`);
     setVisualByBeat((prev) => ({ ...prev, [visual.beatIndex]: visual }));
     setCurrentVisual((prev) => {
-      if (!prev) return visual;
-      if (visual.type === "video" && visual.beatIndex === prev.beatIndex) return visual;
-      if (visual.beatIndex >= currentBeatRef.current) return visual;
+      // Always upgrade video→video for same beat
+      if (visual.type === "video" && prev?.beatIndex === visual.beatIndex) return visual;
+      // Only show as current if it's for the active beat (not a future pre-rendered one)
+      if (visual.beatIndex === currentBeatRef.current) return visual;
+      // Also show if nothing is displayed yet and this is beat 0
+      if (!prev && visual.beatIndex === 0) return visual;
+      console.log(`[DEBUG] applyVisual cached (not current) beat=${visual.beatIndex} (currentBeat=${currentBeatRef.current})`);
       return prev;
     });
   }, []);
@@ -314,10 +320,8 @@ export default function ChronosCinema() {
           const cached = visualByBeatRef.current[beatIdx];
           if (cached) {
             setCurrentVisual(cached);
-          } else {
-             // If we're starting a new beat and no image/video came yet, clear old visual
-             setCurrentVisual(null);
           }
+          // Don't clear to null — keep previous beat's image until new one arrives
           audioEngineRef.current?.duckBgm();
           break;
         }
@@ -334,19 +338,11 @@ export default function ChronosCinema() {
           await ensureAudio();
           const chunk = msg.data as string;
           if (chunk) {
+            lastAudioChunkAt.current = Date.now();
             audioEngineRef.current?.enqueueNarrationChunk(chunk);
-            // Accumulate
             const cur = currentBeatRef.current;
             if (cur >= 0 && accRef.current.beatData[cur]) {
               accRef.current.beatData[cur].narrationChunks.push(chunk);
-              // If we're narrating but no visual is set, clear the "Composing..." spinner
-              // with a generic visual state so the UI doesn't look stuck.
-              if (!currentVisual) {
-                 console.log("[DEBUG] Audio arriving but no visual set. Clearing spinner.");
-                 setCurrentVisual({ type: "image", data: "", mimeType: "image/png", beatIndex: cur });
-              }
-            } else if (cur === -1 && storyCompleteRefLocal.current === false) {
-              // Closing reflection or intro before beat 0 — we could accumulate these too if needed
             }
           }
           break;
@@ -389,6 +385,7 @@ export default function ChronosCinema() {
             typeof msg.beat_index === "number"
               ? (msg.beat_index as number)
               : currentBeatRef.current;
+          console.log(`[DEBUG] Received image for beat ${beatIdx}, data_len=${(msg.data as string)?.length}`);
           applyVisual({
             type: "image",
             data: msg.data as string,
@@ -443,29 +440,29 @@ export default function ChronosCinema() {
           storyCompleteRef.current = true;
           storyCompleteRefLocal.current = true;
           audioEngineRef.current?.stopBgm(2);
-          const saved = await saveCurrentSession();
-          saveToHistory({
-            id: historyIdRef.current,
-            topic: currentTopicRef.current,
-            date: new Date().toISOString(),
-            saved,
+          // Save in background — don't block quiz transition
+          saveCurrentSession().then((saved) => {
+            saveToHistory({
+              id: historyIdRef.current,
+              topic: currentTopicRef.current,
+              date: new Date().toISOString(),
+              saved,
+            });
           });
-          // Transition to quiz after narration drains (non-blocking — checked in useEffect)
+          // Transition to quiz only after all audio has been received AND played back
           const tryTransition = async () => {
-            console.log("[DEBUG] tryTransition started. isNarrationActive =", audioEngineRef.current?.isNarrationActive());
-            const t0 = Date.now();
-            
-            // Wait for audio, but with a hard cap that decreases as we wait
-            while (audioEngineRef.current?.isNarrationActive() && Date.now() - t0 < 8000) {
-              await new Promise(r => setTimeout(r, 200));
+            // Phase 1: wait until no new audio chunks have arrived for 1s
+            // (means the reflection audio stream is fully received)
+            while (true) {
+              await new Promise(r => setTimeout(r, 500));
+              if (Date.now() - lastAudioChunkAt.current >= 1000) break;
             }
-            
-            console.log("[DEBUG] tryTransition loop finished. quizReadyRef =", quizReadyRef.current);
-            // Force phase transition
+            // Phase 2: wait for the audio engine to finish playing everything scheduled
+            const t0 = Date.now();
+            while (audioEngineRef.current?.isNarrationActive() && Date.now() - t0 < 60000) {
+              await new Promise(r => setTimeout(r, 300));
+            }
             if (quizReadyRef.current) {
-              console.log("[DEBUG] Transitioning to quiz phase now.");
-              // Re-set quiz from the accumulator ref to guarantee it's committed
-              // in the same render batch as setPhase, avoiding a blank quiz screen.
               const qs = accRef.current.quizQuestions;
               if (qs?.length) {
                 setQuiz(prev => prev ?? {
@@ -479,7 +476,6 @@ export default function ChronosCinema() {
               }
               setPhase("quiz");
             } else {
-              console.log("[DEBUG] No quiz ready, transitioning to done.");
               setPhase("done");
             }
           };
@@ -565,6 +561,7 @@ export default function ChronosCinema() {
     storyCompleteRefLocal.current = false;
     quizReadyRef.current = false;
     quizReadyRefLocal.current = false;
+    lastAudioChunkAt.current = 0;
 
     await new Promise((resolve) => setTimeout(resolve, 400));
     wsRef.current?.send(
@@ -1031,15 +1028,13 @@ export default function ChronosCinema() {
 
               {/* Image with Ken Burns */}
               {currentVisual?.type === "image" && (
-                <div
-                  key={`${currentVisual.beatIndex}-${currentVisual.data.slice(0, 8)}`}
-                  className="absolute inset-0 overflow-hidden"
-                >
+                <div className="absolute inset-0 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
+                    key={`kb-${currentVisual.beatIndex}`}
                     src={`data:${currentVisual.mimeType};base64,${currentVisual.data}`}
                     alt="Documentary visual"
-                    className={`w-full h-full object-cover ken-burns-${currentBeat % 8}`}
+                    className={`w-full h-full object-cover ken-burns-${currentVisual.beatIndex % 8}`}
                     style={{ "--kb-duration": `${beatDuration + 4}s` } as React.CSSProperties}
                   />
                 </div>

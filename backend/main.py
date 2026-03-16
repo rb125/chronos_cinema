@@ -111,7 +111,7 @@ class ChronosAgent:
         auth_mode_env = (os.getenv("VERTEX_AUTH_MODE") or "auto").strip().lower()
         self.auth_mode = "express_api_key" if api_key and not project_id else "adc"
         
-        client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1alpha"}}
+        client_kwargs: Dict[str, Any] = {"http_options": {"api_version": "v1"}}
 
         if api_key:
             # Vertex AI Express mode: api_key + vertexai=True routes to the Vertex AI
@@ -475,6 +475,7 @@ class ChronosAgent:
             f"Topic: {topic}"
         )
         try:
+            print(f"[GCP] Vertex AI → {self.script_model} | endpoint=https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.script_model}:generateContent | task=script_blueprint topic={topic[:50]!r}")
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
                 model=self.script_model,
@@ -538,6 +539,7 @@ class ChronosAgent:
     async def _generate_lyria_audio_bytes(self, prompt: str) -> Optional[bytes]:
         """Call Lyria 002 via Vertex AI predict (multimodal engine)."""
         url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.lyria_model}:predict"
+        print(f"[GCP] Vertex AI → {self.lyria_model} | endpoint={url} | project={self.project_id}")
 
         # Obtain ADC credentials
         credentials, _ = google.auth.default()
@@ -573,7 +575,9 @@ class ChronosAgent:
         encoded_audio = self._extract_first_audio_base64(body)
         if not encoded_audio:
             return None
-        return base64.b64decode(encoded_audio)
+        audio_bytes = base64.b64decode(encoded_audio)
+        print(f"[GCP] Lyria response received | audio_bytes={len(audio_bytes):,} | project={self.project_id}")
+        return audio_bytes
 
     async def generate_background_score_audio(self, prompt: str, websocket: WebSocket):
         if not prompt.strip():
@@ -603,8 +607,8 @@ class ChronosAgent:
 
         try:
             await self._send(websocket, {"type": "status", "content": "Composing background score with Lyria..."})
-            async with asyncio.timeout(45):
-                audio_bytes = await asyncio.to_thread(self._generate_lyria_audio_bytes, prompt)
+            async with asyncio.timeout(120):
+                audio_bytes = await self._generate_lyria_audio_bytes(prompt)
             if not audio_bytes:
                 await self._send(
                     websocket,
@@ -634,8 +638,8 @@ class ChronosAgent:
         predictions = predict_response.get("predictions", [])
         if not predictions:
             return None
-        # Lyria output is typically a list of dicts with 'audio_bytes' (base64)
-        return predictions[0].get("audio_bytes")
+        p = predictions[0]
+        return p.get("bytesBase64Encoded") or p.get("audio_bytes")
 
     def _spawn_task(self, task_set: Set[asyncio.Task], coro, name: str) -> asyncio.Task:
         task = asyncio.create_task(coro, name=name)
@@ -825,6 +829,7 @@ class ChronosAgent:
                     {"type": "status", "content": f"{status_prefix} Generating storyboard frame: {prompt[:70]}..."},
                 )
                 async with self._image_guard:
+                    print(f"[GCP] Vertex AI → {self.image_model} | endpoint=https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.image_model}:generateContent | task=image_generation prompt={prompt[:60]!r}")
                     # Nano Banana models (multimodal native) use generate_content
                     response = await asyncio.to_thread(
                         self.client.models.generate_content,
@@ -922,7 +927,7 @@ class ChronosAgent:
             "- No markdown, valid JSON only"
         )
         try:
-            print(f"[DEBUG] [Quiz Agent] Requesting quiz from {self.script_model}...")
+            print(f"[GCP] Vertex AI → {self.script_model} | endpoint=https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.script_model}:generateContent | task=quiz_generation topic={topic[:50]!r}")
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
                 model=self.script_model,
@@ -1194,7 +1199,8 @@ class ChronosAgent:
 
     async def start_session(self, websocket: WebSocket, initial_message: Optional[dict] = None):
         # Isolate the Live session client to prevent resource contention with background workers.
-        live_client = genai.Client(**self._client_kwargs)
+        live_client_kwargs = {**self._client_kwargs, "http_options": {"api_version": "v1beta1"}}
+        live_client = genai.Client(**live_client_kwargs)
 
         config = {
             "system_instruction": {
@@ -1232,7 +1238,9 @@ STYLE:
 
         self._out_queue = asyncio.Queue()
         try:
+            print(f"[GCP] Vertex AI → {self.live_model} | endpoint=wss://{self.location}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent | project={self.project_id}")
             async with live_client.aio.live.connect(model=self.live_model, config=config) as session:
+                print(f"[GCP] Gemini Live session established | model={self.live_model} | project={self.project_id} location={self.location}")
                 active_tasks: Set[asyncio.Task] = set()
                 # Start the background sender task to process the client websocket queue
                 self._spawn_task(
@@ -1288,6 +1296,7 @@ STYLE:
                         image_prompt = beat.get("image_prompt") or (
                             "Photorealistic documentary still. " + (beat.get("video_prompt") or "")
                         )
+                        print(f"[DEBUG] render_image_for_beat {beat_idx} starting, prompt={image_prompt[:60]}")
                         payload = await self._render_image_payload(
                             image_prompt,
                             websocket=websocket,
@@ -1295,7 +1304,10 @@ STYLE:
                         )
                         if payload:
                             payload["beat_index"] = beat_idx
+                            print(f"[DEBUG] render_image_for_beat {beat_idx} done, sending payload data_len={len(payload.get('data',''))}")
                             await self._send(websocket, payload)
+                        else:
+                            print(f"[DEBUG] render_image_for_beat {beat_idx} returned None payload")
                         return payload
 
                     try:
@@ -1338,7 +1350,7 @@ STYLE:
                             {"type": "status", "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready."},
                         )
 
-                        # ── Phase 1: Fire media renders (staggered to prevent burst timeouts) ──
+                        # ── Phase 1: Fire all image renders immediately (no stagger — semaphore limits concurrency) ──
                         image_tasks: Dict[int, asyncio.Task] = {}
                         for beat_idx, beat in enumerate(beats):
                             image_tasks[beat_idx] = self._spawn_task(
@@ -1346,8 +1358,6 @@ STYLE:
                                 render_image_for_beat(beat_idx, beat),
                                 f"image-beat-{beat_idx + 1}",
                             )
-                            # Stagger each beat's generation to prevent 16+ simultaneous API bursts.
-                            await asyncio.sleep(1.5)
 
                         # BGM fires in background, fallback plays immediately
                         self._spawn_task(
@@ -1357,20 +1367,26 @@ STYLE:
                         )
 
                         # ── Phase 2: Hold narration until beat 0's image is ready ──
-                        # This is the "cinematic curtain rise" — we wait for the first frame
-                        # before the narrator speaks. Max wait: 28s.
-                        # Subsequent beats: images pre-generate while the previous beat narrates,
-                        # so we only need a short (≤6s) catch-up wait before each beat.
+                        # Send keepalive pings to Gemini Live every 5s while waiting to prevent
+                        # the session from timing out during image generation (~10-15s).
                         beat0_task = image_tasks.get(0)
                         if beat0_task and not beat0_task.done():
                             await self._send(
                                 websocket,
                                 {"type": "status", "content": "[Studio] Composing opening scene... narration starts when first frame is ready."},
                             )
-                            try:
-                                async with asyncio.timeout(28):
-                                    await asyncio.shield(beat0_task)
-                            except (asyncio.TimeoutError, asyncio.CancelledError):
+                            deadline = asyncio.get_event_loop().time() + 28
+                            while not beat0_task.done() and asyncio.get_event_loop().time() < deadline:
+                                try:
+                                    await asyncio.wait_for(asyncio.shield(beat0_task), timeout=5)
+                                    break
+                                except asyncio.TimeoutError:
+                                    # Keepalive: send a silent audio chunk to prevent Live session idle timeout
+                                    try:
+                                        await session.send(input=" ", end_of_turn=False)
+                                    except Exception:
+                                        pass
+                            if not beat0_task.done():
                                 await self._send(
                                     websocket,
                                     {"type": "status", "content": "[Studio] Opening scene delayed — starting narration with placeholder visual."},
@@ -1435,38 +1451,42 @@ STYLE:
 
                             await self._send(websocket, {"type": "beat_end", "beat_index": beat_index})
 
-                        # ── Phase 4: Quiz generation ──
+                        # ── Phase 4: Quiz generation + closing reflection (concurrent) ──
                         script_content = "\n\n".join(
                             f"Beat {i + 1}: {b.get('narration', '')}" for i, b in enumerate(beats)
                         )
-                        await self._send(
-                            websocket,
-                            {"type": "status", "content": "[Quiz Agent] Generating quiz questions..."},
+                        await self._send(websocket, {"type": "status", "content": "[Quiz Agent] Generating quiz questions..."})
+                        # Build quiz concurrently while reflection narrates
+                        quiz_task = self._spawn_task(
+                            active_tasks,
+                            self.build_quiz(topic, script_content),
+                            "quiz",
                         )
-                        quiz_questions = await self.build_quiz(topic, script_content)
-                        if quiz_questions:
-                            print(f"[DEBUG] [Quiz Agent] Sending {len(quiz_questions)} questions to client.")
-                            await self._send(websocket, {"type": "quiz_data", "questions": quiz_questions, "topic": topic})
-                        else:
-                            print("[DEBUG] [Quiz Agent] No questions generated, even fallback failed.")
-                        
+
                         try:
                             print("[DEBUG] [Studio] Requesting closing reflection from Gemini...")
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."},
-                            )
+                            await self._send(websocket, {"type": "status", "content": "[Studio] Documentary complete. Delivering closing reflection."})
                             turn_complete_event.clear()
                             await send_turn_input(self._build_follow_up_prompt(topic, user_name))
-
                             print("[DEBUG] [Studio] Waiting for reflection turn_complete...")
                             got_reflection = await wait_for_turn_complete(timeout_seconds=60)
                             print(f"[DEBUG] [Studio] Reflection turn_complete received: {got_reflection}")
                         except Exception as reflection_err:
                             print(f"[DEBUG] [Studio] Closing reflection failed (non-fatal): {reflection_err}")
-                        finally:
-                            print("[DEBUG] [Studio] Sending story_complete signal to client.")
-                            await self._send(websocket, {"type": "story_complete"})
+
+                        # Wait for quiz (should already be done by now)
+                        try:
+                            quiz_questions = await asyncio.wait_for(asyncio.shield(quiz_task), timeout=15)
+                        except Exception:
+                            quiz_questions = None
+                        if quiz_questions:
+                            print(f"[DEBUG] [Quiz Agent] Sending {len(quiz_questions)} questions to client.")
+                            await self._send(websocket, {"type": "quiz_data", "questions": quiz_questions, "topic": topic})
+                        else:
+                            print("[DEBUG] [Quiz Agent] No questions generated.")
+
+                        print("[DEBUG] [Studio] Sending story_complete signal to client.")
+                        await self._send(websocket, {"type": "story_complete"})
 
                     except asyncio.CancelledError:
                         await self._send(
