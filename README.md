@@ -160,6 +160,28 @@ NEXT_PUBLIC_WS_URL=ws://your-backend-host/ws
 
 ---
 
+## Cloud Deployment
+
+[`deploy.sh`](deploy.sh) automates the full backend deployment to Cloud Run:
+
+```bash
+export GOOGLE_CLOUD_PROJECT=your-project-id
+chmod +x deploy.sh && ./deploy.sh
+```
+
+The script:
+1. Enables all required GCP APIs (`aiplatform`, `run`, `cloudbuild`, `artifactregistry`)
+2. Builds and deploys the backend from source via `gcloud run deploy --source`
+3. Prints the deployed service URL and the `NEXT_PUBLIC_WS_URL` value for the frontend
+
+Then deploy the frontend to Vercel or any static host with:
+```bash
+# frontend/.env.local
+NEXT_PUBLIC_WS_URL=wss://your-cloud-run-url/ws
+```
+
+---
+
 ## Notes
 
 - **API key in UI** — Entered in the browser, transmitted only to your own backend over WebSocket. Stored in `sessionStorage` (clears on tab close), never persisted server-side.

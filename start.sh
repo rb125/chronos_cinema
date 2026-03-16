@@ -15,7 +15,7 @@ if [ -d ".venv" ]; then
 fi
 uvicorn main:app --host 0.0.0.0 --port 8000 \
   --ws websockets-sansio \
-  --ws-ping-interval 0 &
+  --ws-ping-interval 60 --ws-ping-timeout 60 &
 BACKEND_PID=$!
 
 # ── Frontend ─────────────────────────────────────

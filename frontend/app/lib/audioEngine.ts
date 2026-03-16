@@ -115,6 +115,11 @@ export class AudioEngine {
     return this.nextNarrationTime > this.ctx.currentTime + 0.05;
   }
 
+  /** Reset the narration clock to now — call before enqueuing replay chunks for each beat. */
+  resetNarrationClock(): void {
+    if (this.ctx) this.nextNarrationTime = this.ctx.currentTime;
+  }
+
   /**
    * Load and loop BGM from a base64-encoded WAV/audio file.
    * Fades in smoothly from current volume.

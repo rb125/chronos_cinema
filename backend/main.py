@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,30 @@ except ImportError:
 
 
 load_dotenv()
+
+# ── Image disk cache ──────────────────────────────────────────────────────────
+_IMAGE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "image_cache")
+os.makedirs(_IMAGE_CACHE_DIR, exist_ok=True)
+
+def _cache_key(prompt: str) -> str:
+    return hashlib.sha256(prompt.strip().lower().encode()).hexdigest()
+
+def _cache_get(prompt: str) -> Optional[Dict[str, Any]]:
+    path = os.path.join(_IMAGE_CACHE_DIR, _cache_key(prompt) + ".json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+def _cache_put(prompt: str, payload: Dict[str, Any]) -> None:
+    path = os.path.join(_IMAGE_CACHE_DIR, _cache_key(prompt) + ".json")
+    try:
+        with open(path, "w") as f:
+            json.dump(payload, f)
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI()
 
@@ -90,7 +115,7 @@ class ScriptBeat(BaseModel):
 class ScriptBlueprint(BaseModel):
     title: str
     music_prompt: str
-    documentary_flow: List[ScriptBeat] = Field(min_length=1, max_length=10)
+    documentary_flow: List[ScriptBeat] = Field(min_length=1, max_length=4)
 
 
 class ChronosAgent:
@@ -158,38 +183,12 @@ class ChronosAgent:
 
         self._storage_client: Optional["storage.Client"] = None
         self._video_guard = asyncio.Semaphore(self.video_render_concurrency)
-        self._image_guard = asyncio.Semaphore(4)  # allow all beats to render in parallel
+        self._image_guard = asyncio.Semaphore(1)  # sequential — one image at a time
+        self._bgm_sent = False  # guard: only one Lyria call per session
         self._out_queue: Optional[asyncio.Queue] = None
         self._client_kwargs = client_kwargs # Store for per-session isolation
 
-        self.live_tools = [
-            {
-                "function_declarations": [
-                    {
-                        "name": "queue_scene_image",
-                        "description": "Queue a high-detail cinematic visual for the current narration beat.",
-                        "parameters": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "prompt": {"type": "STRING"},
-                            },
-                            "required": ["prompt"],
-                        },
-                    },
-                    {
-                        "name": "switch_music_mood",
-                        "description": "Update the background score mood for this narrative segment.",
-                        "parameters": {
-                            "type": "OBJECT",
-                            "properties": {
-                                "prompt": {"type": "STRING"},
-                            },
-                            "required": ["prompt"],
-                        },
-                    },
-                ],
-            }
-        ]
+        self.live_tools = []  # No tools — images and BGM are pre-rendered by the backend
 
     async def _send(self, websocket: WebSocket, payload: dict):
         """Pushes a message into the outgoing queue for the client WebSocket.
@@ -496,8 +495,8 @@ class ChronosAgent:
             repair_prompt = (
                 "Fix this malformed JSON and return valid JSON only.\n"
                 "Required keys: title, music_prompt, documentary_flow.\n"
-                "documentary_flow must have exactly 8 objects and each object must contain:\n"
-                "beat_id, segment_title, target_duration_seconds (30-40), narration_script (200-250 words), "
+                "documentary_flow must have exactly 4 objects and each object must contain:\n"
+                "beat_id, segment_title, target_duration_seconds (15), narration_script (40-50 words), "
                 "visual_prompt_veo, fallback_image_prompt.\n"
                 f"Malformed JSON:\n{raw_text}"
             )
@@ -582,6 +581,10 @@ class ChronosAgent:
     async def generate_background_score_audio(self, prompt: str, websocket: WebSocket):
         if not prompt.strip():
             return
+        if getattr(self, "_bgm_sent", False):
+            print("[Music Agent] BGM already sent this session — skipping duplicate call.")
+            return
+        self._bgm_sent = True
 
         await self._send(websocket, {"type": "music_prompt", "content": prompt.strip()})
         if not self.project_id:
@@ -821,6 +824,13 @@ class ChronosAgent:
         *,
         status_prefix: str = "[Image Agent]",
     ) -> Optional[Dict[str, Any]]:
+        # Check disk cache first
+        cached = await asyncio.to_thread(_cache_get, prompt)
+        if cached:
+            print(f"[Cache] Image cache hit for prompt: {prompt[:60]!r}")
+            await self._send(websocket, {"type": "status", "content": f"{status_prefix} Using cached visual."})
+            return cached
+
         max_attempts = 4
         for attempt in range(max_attempts):
             try:
@@ -830,7 +840,6 @@ class ChronosAgent:
                 )
                 async with self._image_guard:
                     print(f"[GCP] Vertex AI → {self.image_model} | endpoint=https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{self.image_model}:generateContent | task=image_generation prompt={prompt[:60]!r}")
-                    # Nano Banana models (multimodal native) use generate_content
                     response = await asyncio.to_thread(
                         self.client.models.generate_content,
                         model=self.image_model,
@@ -843,12 +852,14 @@ class ChronosAgent:
                         inline = getattr(part, "inline_data", None)
                         if inline and inline.data:
                             b64_data = await asyncio.to_thread(base64.b64encode, inline.data)
-                            return {
+                            payload = {
                                 "type": "image",
                                 "data": b64_data.decode("utf-8"),
                                 "mime_type": inline.mime_type or "image/png",
                                 "uri": None,
                             }
+                            await asyncio.to_thread(_cache_put, prompt, payload)
+                            return payload
                     raise RuntimeError("Gemini image model returned no image part.")
             except Exception as e:
                 error_text = str(e)
@@ -856,7 +867,7 @@ class ChronosAgent:
                 print(f"Image generation error (attempt {attempt + 1}/{max_attempts}): {e}")
                 if is_quota:
                     if attempt < max_attempts - 1:
-                        backoff = 10 * (2 ** attempt)  # 10s, 20s, 40s
+                        backoff = 20 * (2 ** attempt)  # 20s, 40s, 80s
                         await self._send(websocket, {"type": "status", "content": f"{status_prefix} Quota limit hit, retrying in {backoff}s... (attempt {attempt + 1}/{max_attempts})"})
                         await asyncio.sleep(backoff)
                     else:
@@ -1205,25 +1216,14 @@ class ChronosAgent:
         config = {
             "system_instruction": {
                 "parts": [{
-                    "text": """You are Chronos Delegator, a live creative director in an agentic multimodal system.
+                    "text": """You are a cinematic documentary narrator.
 
-ROLE:
-- Speak to the user with natural, cinematic narration.
-- Coordinate specialist worker agents via tool calls:
-  - queue_scene_image(prompt)
-  - switch_music_mood(prompt)
-
-INTERLEAVING RULES:
-- Treat each narration segment as one beat tied to one visual cue.
-- Keep language visually grounded in the currently shown shot.
-- Use tool calls only when the user explicitly requests a visual/music change.
-- Never read tool names/prompts aloud.
+ROLE: Deliver the narration text provided to you word-for-word, with full dramatic pacing and gravitas.
 
 STYLE:
-- Deep, measured, authoritative documentary tone — gravitas of a nature documentary narrator.
+- Deep, measured, authoritative documentary tone.
 - Speak slowly and deliberately, with weight on key words.
-- Prioritize clarity, momentum, and educational value.
-- For full topic runs, target a 1-2 minute educational experience with progressive depth.""",
+- Do NOT call any tools. Do NOT add commentary beyond the narration text given.""",
                 }],
             },
             "response_modalities": ["AUDIO"],
@@ -1233,7 +1233,6 @@ STYLE:
                 },
             },
             "output_audio_transcription": {},
-            "tools": self.live_tools,
         }
 
         self._out_queue = asyncio.Queue()
@@ -1340,8 +1339,8 @@ STYLE:
                                         "target_duration_seconds": template.get("target_duration_seconds", 15),
                                     }
                                 )
-                        if len(beats) > 10:
-                            beats = beats[:10]
+                        if len(beats) > 4:
+                            beats = beats[:4]
 
                         title = str(blueprint.get("title") or topic).strip() or topic
                         await self._send(websocket, {"type": "topic_received", "content": topic, "title": title})
@@ -1350,7 +1349,7 @@ STYLE:
                             {"type": "status", "content": f"[Script Agent] '{title}' — {len(beats)}-beat documentary ready."},
                         )
 
-                        # ── Phase 1: Fire all image renders immediately (no stagger — semaphore limits concurrency) ──
+                        # ── Phase 1: Fire image renders sequentially (one at a time) ──
                         image_tasks: Dict[int, asyncio.Task] = {}
                         for beat_idx, beat in enumerate(beats):
                             image_tasks[beat_idx] = self._spawn_task(
@@ -1367,30 +1366,18 @@ STYLE:
                         )
 
                         # ── Phase 2: Hold narration until beat 0's image is ready ──
-                        # Send keepalive pings to Gemini Live every 5s while waiting to prevent
-                        # the session from timing out during image generation (~10-15s).
                         beat0_task = image_tasks.get(0)
                         if beat0_task and not beat0_task.done():
-                            await self._send(
-                                websocket,
-                                {"type": "status", "content": "[Studio] Composing opening scene... narration starts when first frame is ready."},
-                            )
-                            deadline = asyncio.get_event_loop().time() + 28
-                            while not beat0_task.done() and asyncio.get_event_loop().time() < deadline:
+                            await self._send(websocket, {"type": "status", "content": "[Studio] Composing opening scene... narration starts when first frame is ready."})
+                            while not beat0_task.done():
                                 try:
                                     await asyncio.wait_for(asyncio.shield(beat0_task), timeout=5)
                                     break
                                 except asyncio.TimeoutError:
-                                    # Keepalive: send a silent audio chunk to prevent Live session idle timeout
                                     try:
                                         await session.send(input=" ", end_of_turn=False)
                                     except Exception:
                                         pass
-                            if not beat0_task.done():
-                                await self._send(
-                                    websocket,
-                                    {"type": "status", "content": "[Studio] Opening scene delayed — starting narration with placeholder visual."},
-                                )
 
                         await self._send(websocket, {"type": "status", "content": "[Studio] Scene locked. Rolling documentary."})
 
@@ -1407,11 +1394,19 @@ STYLE:
                                         websocket,
                                         {"type": "status", "content": f"[Studio] Loading scene {beat_index + 1}..."},
                                     )
-                                    try:
-                                        async with asyncio.timeout(20):
-                                            await asyncio.shield(img_task)
-                                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                                        pass
+                                    # Wait with keepalive pings so Live session doesn't drop
+                                    deadline = 100  # seconds
+                                    elapsed = 0
+                                    while not img_task.done() and elapsed < deadline:
+                                        try:
+                                            await asyncio.wait_for(asyncio.shield(img_task), timeout=5)
+                                            break
+                                        except asyncio.TimeoutError:
+                                            elapsed += 5
+                                            try:
+                                                await session.send(input=" ", end_of_turn=False)
+                                            except Exception:
+                                                pass
 
                             await self._send(
                                 websocket,
@@ -1474,9 +1469,9 @@ STYLE:
                         except Exception as reflection_err:
                             print(f"[DEBUG] [Studio] Closing reflection failed (non-fatal): {reflection_err}")
 
-                        # Wait for quiz (should already be done by now)
+                        # Wait for quiz — generous timeout since API may be under load
                         try:
-                            quiz_questions = await asyncio.wait_for(asyncio.shield(quiz_task), timeout=15)
+                            quiz_questions = await asyncio.wait_for(asyncio.shield(quiz_task), timeout=45)
                         except Exception:
                             quiz_questions = None
                         if quiz_questions:

@@ -216,6 +216,8 @@ export default function ChronosCinema() {
 
   const applyVisual = useCallback((visual: Visual) => {
     console.log(`[DEBUG] applyVisual beat=${visual.beatIndex} type=${visual.type} currentBeat=${currentBeatRef.current}`);
+    // Update ref immediately — no useEffect lag — so beat_start can read it synchronously
+    visualByBeatRef.current = { ...visualByBeatRef.current, [visual.beatIndex]: visual };
     setVisualByBeat((prev) => ({ ...prev, [visual.beatIndex]: visual }));
     setCurrentVisual((prev) => {
       // Always upgrade video→video for same beat
@@ -357,10 +359,6 @@ export default function ChronosCinema() {
             const cur = currentBeatRef.current;
             if (cur >= 0 && accRef.current.beatData[cur] && text.trim()) {
               accRef.current.beatData[cur].subtitles.push(text.trim());
-              // Also clear spinner if text arrives (means narrator is active)
-              if (!currentVisual) {
-                setCurrentVisual({ type: "image", data: "", mimeType: "image/png", beatIndex: cur });
-              }
             }
           }
           break;
@@ -643,6 +641,9 @@ export default function ChronosCinema() {
         }
         const audioDurationMs = (totalPcmSamples / NARRATION_SAMPLE_RATE) * 1000;
 
+        // Reset clock so chunks schedule from "now", not from end of previous beat
+        audioEngineRef.current?.resetNarrationClock();
+
         // Schedule all narration chunks
         for (const chunk of beat.narrationChunks) {
           if (replayAbortRef.current) break;
@@ -659,8 +660,9 @@ export default function ChronosCinema() {
           });
         }
 
-        // Wait for narration to finish (max = saved duration + 3 s buffer)
+        // Wait for narration to finish — always wait at least one tick first
         const maxWaitMs = Math.max(audioDurationMs + 3000, beat.durationSeconds * 1000 + 3000, 5000);
+        await new Promise((r) => setTimeout(r, 100)); // let AudioContext schedule
         const t0 = Date.now();
         while (
           !replayAbortRef.current &&
@@ -1153,16 +1155,30 @@ export default function ChronosCinema() {
       )}
 
       {/* ── DONE ── */}
-      {phase === "done" && quiz && (
-        <DoneView
-          quiz={quiz}
-          topic={topic}
-          onRestart={() => {
-            setPhase("idle");
-            setTopic("");
-            setQuiz(null);
-          }}
-        />
+      {phase === "done" && (
+        quiz ? (
+          <DoneView
+            quiz={quiz}
+            topic={topic}
+            onRestart={() => {
+              setPhase("idle");
+              setTopic("");
+              setQuiz(null);
+            }}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <p className="text-cinema-gold text-lg font-semibold">Documentary complete.</p>
+              <button
+                onClick={() => { setPhase("idle"); setTopic(""); }}
+                className="px-6 py-2 rounded-lg bg-cinema-gold/20 border border-cinema-gold/40 text-cinema-gold hover:bg-cinema-gold/30 transition-colors text-sm"
+              >
+                Produce another
+              </button>
+            </div>
+          </div>
+        )
       )}
       </div> {/* end main content */}
     </div> /* end outer flex */
