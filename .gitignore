@@ -6,6 +6,8 @@ backend/__pycache__/
 *.pyc
 *.pyo
 .env
+.env.local
+.env*.local
 backend/image_cache/
 
 # Node
